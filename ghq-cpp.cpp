@@ -573,6 +573,48 @@ public:
    simple_mem_stack<double> &mem) const;
 };
 
+// integrand-mixed-probit-term.h
+
+/**
+ * computes the likelihood of single mixed probit term. That is the probability 
+ * 
+ *   g(u) = Phi(eta + z^Tu)
+ *   
+ * The function can easily be extended to more than one probit factor if needed. 
+ * The gradient is with respect to the scalar eta and the vector z.
+ */
+template<bool comp_grad = false>
+class mixed_probit_term final : public ghq_problem {
+  double const eta;
+  arma::mat const Sigma_chol;
+  arma::vec const Sigma_chol_z;
+  
+  size_t const v_n_vars = Sigma_chol_z.n_elem, 
+                v_n_out{comp_grad ? 2 + Sigma_chol_z.n_elem: 1};
+  
+public:
+  mixed_probit_term
+    (double const eta, arma::mat const &Sigma, arma::vec const &z);
+  
+  size_t n_vars() const { return v_n_vars; }
+  size_t n_out() const { return v_n_out; }
+  
+  void eval
+  (double const *points, size_t const n_points, double * __restrict__ outs, 
+   simple_mem_stack<double> &mem) const;
+  
+  double log_integrand
+    (double const *point, simple_mem_stack<double> &mem) const;
+  
+  double log_integrand_grad
+    (double const *point, double * __restrict__ grad,
+     simple_mem_stack<double> &mem) const;
+  
+  void log_integrand_hess
+    (double const *point, double *hess, 
+     simple_mem_stack<double> &mem) const;
+};
+
 // ghq.cpp
 
 adaptive_problem::mode_problem::mode_problem
@@ -1210,6 +1252,112 @@ void mixed_mult_logit_term<comp_grad>::log_integrand_hess
 template class mixed_mult_logit_term<false>;
 template class mixed_mult_logit_term<true>;
 
+// integrand-mixed-probit-term.cpp
+
+#include <Rmath.h> // Rf_dnorm4 and Rf_pnorm5
+
+template<bool comp_grad>
+mixed_probit_term<comp_grad>::mixed_probit_term
+  (double const eta, arma::mat const &Sigma, arma::vec const &z):
+  eta{eta}, Sigma_chol{arma::chol(Sigma, "upper")}, 
+  Sigma_chol_z{Sigma_chol * z} {
+    if(z.n_elem != Sigma.n_cols)
+      throw std::invalid_argument("z.n_elem != Sigma_chol.n_cols");
+  }
+
+// TODO: test this function
+template<bool comp_grad>
+void mixed_probit_term<comp_grad>::eval
+  (double const *points, size_t const n_points, double * __restrict__ outs, 
+   simple_mem_stack<double> &mem) const {
+  // compute the linear predictor
+  double * const __restrict__ lps{mem.get(n_points)};
+  std::fill(lps, lps + n_points, eta);
+  for(size_t j = 0; j < n_vars(); ++j)
+    for(size_t i = 0; i < n_points; ++i)
+      lps[i] += points[i + j * n_points] * Sigma_chol_z[j];
+  
+  // set the output 
+  for(size_t i = 0; i < n_points; ++i, ++outs)
+    *outs = Rf_pnorm5(lps[i], 0, 1, 1, 0);
+  
+  if constexpr (comp_grad){
+    // the derivative w.r.t. eta
+    for(size_t i = 0; i < n_points; ++i, ++outs){
+      lps[i] = Rf_dnorm4(lps[i], 0, 1, 0);
+      *outs = lps[i]; 
+    }
+    
+    // the derivatives w.r.t. z
+    double * const us{mem.get(n_points * n_vars())};
+    std::copy(points, points + n_points * n_vars(), us);
+    {
+      int const m = n_points, n = n_vars();
+      constexpr double const alpha{1};
+      constexpr char const c_R{'R'}, c_U{'U'}, c_N{'N'};
+      F77_CALL(dtrmm)
+        (&c_R, &c_U, &c_N, &c_N, &m, &n, &alpha, Sigma_chol.memptr(), &n, 
+         us, &m, 1, 1, 1, 1);
+    }
+    
+    double const *us_ij{us};
+    for(size_t j = 0; j < n_vars(); ++j)
+      for(size_t i = 0; i < n_points; ++i, ++outs, ++us_ij)
+        *outs = lps[i] * *us_ij;
+  }
+}
+
+// TODO: test this function
+template<bool comp_grad>
+double mixed_probit_term<comp_grad>::log_integrand
+  (double const *point, simple_mem_stack<double> &mem) const {
+  double lp{eta};
+  for(size_t i = 0; i < n_vars(); ++i)
+    lp += point[i] * Sigma_chol_z[i];
+  return Rf_pnorm5(lp, 0, 1, 1, 1);
+}
+
+// TODO: test this function
+template<bool comp_grad>
+double mixed_probit_term<comp_grad>::log_integrand_grad
+  (double const *point, double * __restrict__ grad, 
+   simple_mem_stack<double> &mem) const {
+  double lp{eta};
+  for(size_t i = 0; i < n_vars(); ++i)
+    lp += point[i] * Sigma_chol_z[i];
+  
+  double const log_pnrm{Rf_pnorm5(lp, 0, 1, 1, 1)}, 
+               log_dnrm{Rf_dnorm4(lp, 0, 1, 1)},
+               d_lp{std::exp(log_dnrm - log_pnrm)};
+  
+  for(size_t i = 0; i < n_vars(); ++i)
+    grad[i] = Sigma_chol_z[i] * d_lp;
+  
+  return log_pnrm;
+}
+
+// TODO: test this function
+template<bool comp_grad>
+void mixed_probit_term<comp_grad>::log_integrand_hess
+  (double const *point, double *hess, 
+   simple_mem_stack<double> &mem) const {
+  double lp{eta};
+  for(size_t i = 0; i < n_vars(); ++i)
+    lp += point[i] * Sigma_chol_z[i];
+  
+  double const log_pnrm{Rf_pnorm5(lp, 0, 1, 1, 1)}, 
+               log_dnrm{Rf_dnorm4(lp, 0, 1, 1)},
+                  ratio{std::exp(log_dnrm - log_pnrm)},
+                d_lp_sq{-(lp * ratio + ratio * ratio)};
+  
+  for(size_t j = 0; j < n_vars(); ++j)
+    for(size_t i = 0; i < n_vars(); ++i)
+      hess[i + j * n_vars()] = Sigma_chol_z[i] * Sigma_chol_z[j] * d_lp_sq;
+}
+
+template class mixed_probit_term<false>;
+template class mixed_probit_term<true>;
+
 // R-interface.cpp
 
 ghq_data vecs_to_ghq_data(arma::vec const &weights, arma::vec const &nodes){
@@ -1275,7 +1423,7 @@ Rcpp::NumericVector mixed_mult_logit_term_grad
   mixed_mult_logit_term<true> logit_term(eta, Sigma, which_category);
   outer_prod_problem outer_term(Sigma.n_cols);
   
-  std::vector<ghq_problem const *> const prob_dat{ &logit_term, &outer_term};
+  std::vector<ghq_problem const *> const prob_dat{ &logit_term, &outer_term };
   combined_problem prob(prob_dat);
   
   auto ghq_data_pass = vecs_to_ghq_data(weights, nodes);
@@ -1302,6 +1450,107 @@ Rcpp::NumericVector mixed_mult_logit_term_grad
   outer_term.d_Sig
     (&out[fixef_shift], res.data() + fixef_shift, res[0], Sigma);
     
+  return out;
+}
+
+/// for the combination of two types of outcomes
+// [[Rcpp::export(rng = false)]]
+double mixed_mult_logit_n_probit
+  (arma::mat const &eta, arma::mat const &Sigma, 
+   arma::uvec const &which_category, double const probit_eta, 
+   arma::vec const &z, arma::vec const &weights, 
+   arma::vec const &nodes, size_t const target_size = 128, 
+   size_t const n_rep = 1, bool const use_adaptive = false){
+  simple_mem_stack<double> mem;
+  mixed_mult_logit_term<false> logit_term(eta, Sigma, which_category);
+  mixed_probit_term<false> probit_term(probit_eta, Sigma, z);
+  outer_prod_problem outer_term(Sigma.n_cols);
+  
+  std::vector<ghq_problem const *> const prob_dat{ &logit_term, &probit_term };
+  combined_problem prob(prob_dat);
+  
+  auto ghq_data_pass = vecs_to_ghq_data(weights, nodes);
+  
+  std::vector<double> res;  
+  if(use_adaptive){
+    adaptive_problem prob_adap(prob, mem);
+    
+    for(size_t i = 0; i < n_rep; ++i){
+      mem.reset();
+      res = ghq(ghq_data_pass, prob_adap, mem, target_size);
+    }
+    
+  } else 
+    for(size_t i = 0; i < n_rep; ++i){
+      mem.reset();
+      res = ghq(ghq_data_pass, prob, mem, target_size);
+    }
+  
+  return res[0];
+}
+
+/// to test the member functions for the adaptive method
+// [[Rcpp::export(rng = false)]]
+Rcpp::NumericVector mixed_mult_logit_n_probit_grad
+  (arma::mat const &eta, arma::mat const &Sigma, 
+   arma::uvec const &which_category, double const probit_eta, 
+   arma::vec const &z, arma::vec const &weights, 
+   arma::vec const &nodes, size_t const target_size = 128, 
+   size_t const n_rep = 1, bool const use_adaptive = false){
+  simple_mem_stack<double> mem;
+  mixed_mult_logit_term<true> logit_term(eta, Sigma, which_category);
+  mixed_probit_term<true> probit_term(probit_eta, Sigma, z);
+  outer_prod_problem outer_term(Sigma.n_cols);
+  
+  std::vector<ghq_problem const *> const prob_dat
+    { &logit_term, &probit_term, &outer_term };
+  combined_problem prob(prob_dat);
+  
+  auto ghq_data_pass = vecs_to_ghq_data(weights, nodes);
+  
+  std::vector<double> res;  
+  if(use_adaptive){
+    adaptive_problem prob_adap(prob, mem);
+    
+    for(size_t i = 0; i < n_rep; ++i){
+      mem.reset();
+      res = ghq(ghq_data_pass, prob_adap, mem, target_size);
+    }
+    
+  } else 
+    for(size_t i = 0; i < n_rep; ++i){
+      mem.reset();
+      res = ghq(ghq_data_pass, prob, mem, target_size);
+    }
+    
+  // handle the derivatives w.r.t. Sigma
+  size_t const fixef_shift{logit_term.n_out() + probit_term.n_out() - 1};
+  Rcpp::NumericVector out(fixef_shift + Sigma.n_cols * Sigma.n_cols);
+  std::copy(res.begin(), res.begin() + fixef_shift, &out[0]);
+  outer_term.d_Sig
+    (&out[fixef_shift], res.data() + fixef_shift, res[0], Sigma);
+  
+  return out;
+}
+
+/// to test the member functions for the adaptive method
+// [[Rcpp::export(rng = false)]]
+Rcpp::NumericVector mixed_probit_log_integrand
+  (arma::vec const &point, double const probit_eta, 
+   arma::vec const &z, arma::mat const &Sigma, unsigned const ders){
+  simple_mem_stack<double> mem;
+  mixed_probit_term prob(probit_eta, Sigma, z);
+  
+  if(ders == 0){
+    return { prob.log_integrand(point.memptr(), mem) };
+  } else if(ders == 1){
+    Rcpp::NumericVector out(prob.n_vars() + 1);
+    out[0] = prob.log_integrand_grad(point.memptr(), &out[1], mem);
+    return out;
+  } 
+  
+  Rcpp::NumericVector out(prob.n_vars() * prob.n_vars());
+  prob.log_integrand_hess(point.memptr(), &out[0], mem);
   return out;
 }
 
@@ -1544,4 +1793,128 @@ bench::mark(
 `GHQ2 adaptive combined` = 
   do_comp_grad(n_points^2, use_adaptive = TRUE, use_comb = TRUE, 
                n_rep = 1000L))
+
+# mixed multinomial logit with the probit factor example
+set.seed(1)
+n_obs <- 2L
+n <- 3L
+Sigma <- drop(rWishart(1, 2 * n, diag(1/n, n))) |> as.matrix()
+eta <- runif(n_obs * n, -1) |> matrix(nrow = n)
+z <- runif(n, -1)
+probit_eta <- runif(1, -1)
+
+# sample the outcome
+u <- mvtnorm::rmvnorm(1, sigma = Sigma) |> drop()
+lp <- eta + u
+p_hats <- rbind(1, exp(lp)) / rep(1 + colSums(exp(lp)), each = n + 1L)
+which_cat <- apply(p_hats, 2L, \(x) sample.int(n + 1L, 1L, prob = x))
+
+sign_probit <- (pnorm(probit_eta + z %*% u) > runif(1)) |> drop()
+if(!sign_probit){
+  z <- -z
+  probit_eta <- -probit_eta
+}
+rm(u, lp, p_hats, sign_probit)
+
+# make a brute force Monte Carlo estimate
+brute_ests <- apply(mvtnorm::rmvnorm(1e5, sigma = Sigma), 1L, \(u){
+  exp_lp <- exp(eta + u)
+  denom <- 1 + colSums(exp_lp)
+  num <- mapply(
+    \(i, j) if(i == 1L) 1 else exp_lp[i - 1L, j], i = which_cat,
+    j = 1:NCOL(eta))
+  
+  prod(num / denom) * pnorm(probit_eta + z %*% u)
+})
+se <- sd(brute_ests) / sqrt(length(brute_ests))
+brute_est <- mean(brute_ests)
+
+# use the C++ function
+n_points <- 5L
+ghq_dat <- fastGHQuad::gaussHermiteData(n_points)
+
+do_comp <- \(target_size, n_rep = 1L, use_adaptive = FALSE)
+  mixed_mult_logit_n_probit(
+    eta = eta, Sigma = Sigma, 
+    which_category = which_cat - 1L, # zero indexed
+    probit_eta = probit_eta, z = z,
+    weights = ghq_dat$w, nodes = ghq_dat$x, target_size = target_size, 
+    n_rep = n_rep, use_adaptive = use_adaptive)
+
+se / abs(brute_est) # ~ what we expect
+all.equal(do_comp(n_points), brute_est)
+
+# we can check that the member functions for adaptive GHQ are correct
+log_integrand <- \(x){
+  x <- crossprod(chol(Sigma), x) |> drop()
+  pnorm(probit_eta + z %*% x, log.p = TRUE) |> drop()
+}
+log_integrand_cpp <- \(ders)
+  mixed_probit_log_integrand(
+    point = point, probit_eta = probit_eta, Sigma = Sigma, 
+    z = z, ders = ders)
+
+point <- runif(n, -1)
+all.equal(log_integrand(point), log_integrand_cpp(0))
+
+f <- log_integrand_cpp(1)[1]
+g <- log_integrand_cpp(1)[-1]
+all.equal(log_integrand(point), f)
+all.equal(numDeriv::grad(log_integrand, point), g)
+
+all.equal(numDeriv::hessian(log_integrand, point) |> c(), log_integrand_cpp(2L))
+
+# check the quadrature precision with the adaptive version
+se / abs(brute_est) # ~ what we expect
+all.equal(do_comp(n_points, use_adaptive = TRUE), brute_est)
+
+# compute the gradient numerically
+num_grad <- numDeriv::grad(
+  \(par){
+    e <- par[seq_along(eta)] |> matrix(nrow = NROW(eta))
+    par <- par[-seq_along(eta)]
+    e_prob <- par[1]
+    par <- par[-1]
+    z_pass <- par[seq_along(z)]
+
+    S <- matrix(nrow = NROW(Sigma), ncol = NCOL(Sigma))
+    S[upper.tri(S, TRUE)] <- par[-seq_along(z_pass)]
+    S[lower.tri(S)] <- t(S)[lower.tri(S)]
+
+    mixed_mult_logit_n_probit(
+      eta = e, Sigma = S,
+      which_category = which_cat - 1L, # zero indexed
+      probit_eta = e_prob, z = z_pass,
+      weights = ghq_dat$w, nodes = ghq_dat$x, target_size = n_points^2,
+      n_rep = 1L, use_adaptive = TRUE)[1]
+  }, c(eta, probit_eta, z, Sigma[upper.tri(Sigma, TRUE)]))
+
+# use the C++ implementation
+do_comp_grad <- \(target_size, n_rep = 1L, use_adaptive = FALSE){
+  res <- mixed_mult_logit_n_probit_grad(
+    eta = eta, Sigma = Sigma,
+    which_category = which_cat - 1L, # zero indexed
+    probit_eta = probit_eta, z = z,
+    weights = ghq_dat$w, nodes = ghq_dat$x, target_size = target_size,
+    n_rep = n_rep, use_adaptive = use_adaptive)
+
+  d_Sig <- tail(res, NCOL(Sigma)^2) |> matrix(nrow = NCOL(Sigma))
+  d_Sig[upper.tri(d_Sig)] <- 2 * d_Sig[upper.tri(d_Sig)]
+  c(head(res, -NCOL(Sigma)^2), d_Sig[upper.tri(d_Sig, TRUE)])
+}
+
+est <- do_comp_grad(n_points, use_adaptive = TRUE)
+all.equal(brute_est, est[1])
+all.equal(num_grad, est[-1])
+
+# perform a benchmark on both the integral it self and the gradient for 1000 
+# evaluations
+bench::mark(
+  Func = do_comp(target_size = n_points^2, n_rep = 1000), 
+  `Func adaptive` = do_comp(target_size = n_points^2, n_rep = 1000, 
+                            use_adaptive = TRUE), 
+  Grad = do_comp_grad(target_size = n_points^2, n_rep = 1000), 
+  `Grad adaptive` = do_comp_grad(
+    target_size = n_points^2, n_rep = 1000, use_adaptive = TRUE), 
+  check = FALSE)
 */

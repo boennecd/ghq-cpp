@@ -57,9 +57,9 @@ Type 'q()' to quit R.
 [38;5;246m# A tibble: 3 × 13[39m
   expression     min  median `itr/sec` mem_alloc `gc/sec` n_itr  n_gc total_time
   [3m[38;5;246m<bch:expr>[39m[23m [3m[38;5;246m<bch:t>[39m[23m [3m[38;5;246m<bch:t>[39m[23m     [3m[38;5;246m<dbl>[39m[23m [3m[38;5;246m<bch:byt>[39m[23m    [3m[38;5;246m<dbl>[39m[23m [3m[38;5;246m<int>[39m[23m [3m[38;5;246m<dbl>[39m[23m   [3m[38;5;246m<bch:tm>[39m[23m
-[38;5;250m1[39m GHQ1        9.73ms  9.98ms      99.6        0B        0    50     0      502ms
-[38;5;250m2[39m GHQ2        9.75ms 10.05ms      98.5        0B        0    50     0      508ms
-[38;5;250m3[39m GHQ2        8.54ms  8.76ms     112.         0B        0    57     0      507ms
+[38;5;250m1[39m GHQ1       10.07ms 10.12ms      97.5        0B        0    49     0      502ms
+[38;5;250m2[39m GHQ2       10.05ms 10.14ms      98.4        0B        0    50     0      508ms
+[38;5;250m3[39m GHQ2        8.57ms  8.62ms     116.         0B        0    58     0      501ms
 [38;5;246m# … with 4 more variables: result <list>, memory <list>, time <list>, gc <list>[39m
 
 > set.seed(1)
@@ -162,12 +162,12 @@ Type 'q()' to quit R.
 [38;5;246m# A tibble: 6 × 13[39m
   expression         min   median `itr/sec` mem_alloc `gc/sec` n_itr  n_gc
   [3m[38;5;246m<bch:expr>[39m[23m    [3m[38;5;246m<bch:tm>[39m[23m [3m[38;5;246m<bch:tm>[39m[23m     [3m[38;5;246m<dbl>[39m[23m [3m[38;5;246m<bch:byt>[39m[23m    [3m[38;5;246m<dbl>[39m[23m [3m[38;5;246m<int>[39m[23m [3m[38;5;246m<dbl>[39m[23m
-[38;5;250m1[39m GHQ1             9.3ms   9.59ms     104.         0B        0    52     0
-[38;5;250m2[39m GHQ2            9.34ms   9.46ms     105.         0B        0    53     0
-[38;5;250m3[39m GHQ3            8.33ms   8.59ms     116.         0B        0    58     0
-[38;5;250m4[39m GHQ1 adaptive  12.57ms  12.81ms      77.9        0B        0    39     0
-[38;5;250m5[39m GHQ2 adaptive  12.48ms  12.71ms      78.3        0B        0    40     0
-[38;5;250m6[39m GHQ3 adaptive   10.1ms  10.27ms      96.6        0B        0    49     0
+[38;5;250m1[39m GHQ1             9.1ms    9.4ms     106.         0B        0    53     0
+[38;5;250m2[39m GHQ2            9.15ms   9.42ms     101.         0B        0    51     0
+[38;5;250m3[39m GHQ3            8.16ms   8.26ms     121.         0B        0    61     0
+[38;5;250m4[39m GHQ1 adaptive  12.18ms  12.52ms      79.8        0B        0    40     0
+[38;5;250m5[39m GHQ2 adaptive  12.22ms  12.47ms      79.3        0B        0    40     0
+[38;5;250m6[39m GHQ3 adaptive  10.15ms  10.42ms      95.6        0B        0    48     0
 [38;5;246m# … with 5 more variables: total_time <bch:tm>, result <list>, memory <list>,[39m
 [38;5;246m#   time <list>, gc <list>[39m
 
@@ -200,9 +200,130 @@ Type 'q()' to quit R.
 [38;5;246m# A tibble: 3 × 13[39m
   expression                 min median `itr/sec` mem_alloc `gc/sec` n_itr  n_gc
   [3m[38;5;246m<bch:expr>[39m[23m             [3m[38;5;246m<bch:t>[39m[23m [3m[38;5;246m<bch:>[39m[23m     [3m[38;5;246m<dbl>[39m[23m [3m[38;5;246m<bch:byt>[39m[23m    [3m[38;5;246m<dbl>[39m[23m [3m[38;5;246m<int>[39m[23m [3m[38;5;246m<dbl>[39m[23m
-[38;5;250m1[39m GHQ1 adaptive           18.8ms 19.3ms      51.3    5.12KB        0    26     0
-[38;5;250m2[39m GHQ2 adaptive           17.9ms 18.6ms      53.6      200B        0    27     0
-[38;5;250m3[39m GHQ2 adaptive combined  20.6ms 21.6ms      46.4    5.19KB        0    24     0
+[38;5;250m1[39m GHQ1 adaptive           19.5ms 19.8ms      47.8    5.12KB        0    24     0
+[38;5;250m2[39m GHQ2 adaptive           19.2ms 19.8ms      50.4      200B        0    26     0
+[38;5;250m3[39m GHQ2 adaptive combined  21.9ms 22.4ms      41.0    5.19KB        0    21     0
+[38;5;246m# … with 5 more variables: total_time <bch:tm>, result <list>, memory <list>,[39m
+[38;5;246m#   time <list>, gc <list>[39m
+
+> set.seed(1)
+
+> n_obs <- 2
+
+> n <- 3
+
+> Sigma <- as.matrix(drop(rWishart(1, 2 * n, diag(1/n, 
++     n))))
+
+> eta <- matrix(runif(n_obs * n, -1), nrow = n)
+
+> z <- runif(n, -1)
+
+> probit_eta <- runif(1, -1)
+
+> u <- drop(mvtnorm::rmvnorm(1, sigma = Sigma))
+
+> lp <- eta + u
+
+> p_hats <- rbind(1, exp(lp))/rep(1 + colSums(exp(lp)), 
++     each = n + 1)
+
+> which_cat <- apply(p_hats, 2, function(x) sample.int(n + 
++     1, 1, prob = x))
+
+> sign_probit <- drop((pnorm(probit_eta + z %*% u) > 
++     runif(1)))
+
+> if (!sign_probit) {
++     z <- -z
++     probit_eta <- -probit_eta
++ }
+
+> rm(u, lp, p_hats, sign_probit)
+
+> brute_ests <- apply(mvtnorm::rmvnorm(1e+05, sigma = Sigma), 
++     1, function(u) {
++         exp_lp <- exp(eta + u)
++         denom <- 1 + colSums( .... [TRUNCATED] 
+
+> se <- sd(brute_ests)/sqrt(length(brute_ests))
+
+> brute_est <- mean(brute_ests)
+
+> n_points <- 5
+
+> ghq_dat <- fastGHQuad::gaussHermiteData(n_points)
+
+> do_comp <- function(target_size, n_rep = 1, use_adaptive = FALSE) mixed_mult_logit_n_probit(eta = eta, 
++     Sigma = Sigma, which_category = which_ .... [TRUNCATED] 
+
+> se/abs(brute_est)
+[1] 0.005465469
+
+> all.equal(do_comp(n_points), brute_est)
+[1] "Mean relative difference: 0.01448755"
+
+> log_integrand <- function(x) {
++     x <- drop(crossprod(chol(Sigma), x))
++     drop(pnorm(probit_eta + z %*% x, log.p = TRUE))
++ }
+
+> log_integrand_cpp <- function(ders) mixed_probit_log_integrand(point = point, 
++     probit_eta = probit_eta, Sigma = Sigma, z = z, ders = ders)
+
+> point <- runif(n, -1)
+
+> all.equal(log_integrand(point), log_integrand_cpp(0))
+[1] TRUE
+
+> f <- log_integrand_cpp(1)[1]
+
+> g <- log_integrand_cpp(1)[-1]
+
+> all.equal(log_integrand(point), f)
+[1] TRUE
+
+> all.equal(numDeriv::grad(log_integrand, point), g)
+[1] TRUE
+
+> all.equal(c(numDeriv::hessian(log_integrand, point)), 
++     log_integrand_cpp(2))
+[1] TRUE
+
+> se/abs(brute_est)
+[1] 0.005465469
+
+> all.equal(do_comp(n_points, use_adaptive = TRUE), 
++     brute_est)
+[1] "Mean relative difference: 0.0006243278"
+
+> num_grad <- numDeriv::grad(function(par) {
++     e <- matrix(par[seq_along(eta)], nrow = NROW(eta))
++     par <- par[-seq_along(eta)]
++     e_prob < .... [TRUNCATED] 
+
+> do_comp_grad <- function(target_size, n_rep = 1, use_adaptive = FALSE) {
++     res <- mixed_mult_logit_n_probit_grad(eta = eta, Sigma = Sigma, 
++    .... [TRUNCATED] 
+
+> est <- do_comp_grad(n_points, use_adaptive = TRUE)
+
+> all.equal(brute_est, est[1])
+[1] "Mean relative difference: 0.0006247178"
+
+> all.equal(num_grad, est[-1])
+[1] "Mean relative difference: 0.002090637"
+
+> bench::mark(Func = do_comp(target_size = n_points^2, 
++     n_rep = 1000), `Func adaptive` = do_comp(target_size = n_points^2, 
++     n_rep = 1000,  .... [TRUNCATED] 
+[38;5;246m# A tibble: 4 × 13[39m
+  expression         min   median `itr/sec` mem_alloc `gc/sec` n_itr  n_gc
+  [3m[38;5;246m<bch:expr>[39m[23m    [3m[38;5;246m<bch:tm>[39m[23m [3m[38;5;246m<bch:tm>[39m[23m     [3m[38;5;246m<dbl>[39m[23m [3m[38;5;246m<bch:byt>[39m[23m    [3m[38;5;246m<dbl>[39m[23m [3m[38;5;246m<int>[39m[23m [3m[38;5;246m<dbl>[39m[23m
+[38;5;250m1[39m Func              14ms   14.1ms      70.1        0B        0    36     0
+[38;5;250m2[39m Func adaptive   16.9ms   17.1ms      58.4        0B        0    30     0
+[38;5;250m3[39m Grad            22.8ms     23ms      43.4    5.38KB        0    22     0
+[38;5;250m4[39m Grad adaptive   25.8ms   26.2ms      38.1      392B        0    20     0
 [38;5;246m# … with 5 more variables: total_time <bch:tm>, result <list>, memory <list>,[39m
 [38;5;246m#   time <list>, gc <list>[39m
 > 
