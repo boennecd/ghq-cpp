@@ -646,8 +646,9 @@ void ghq_fill_fixed
 void ghq_inner
   (std::vector<double> &res, double * const outs, size_t const lvl, 
    size_t const idx_fix, size_t const n_points, size_t const n_vars,
-   double * const points, double * weights, ghq_problem const &problem, 
-   ghq_data const &dat, simple_mem_stack<double> &mem){
+   double * const points, double const * weights, 
+   ghq_problem const &problem, ghq_data const &dat, 
+   simple_mem_stack<double> &mem){
   if(lvl == idx_fix){
     // evaluate the integrand and add the result
     problem.eval(points, n_points, outs, mem);
@@ -662,21 +663,20 @@ void ghq_inner
   }
   
   // we have to go through all the configurations recursively
+  double * const __restrict__ weights_scaled{mem.get(n_points)};
+  auto mem_marker = mem.set_mark_raii();
+  
   size_t const n_nodes{dat.n_nodes};
   for(size_t j  = 0; j < n_nodes; ++j){
     double * const p{points + (n_vars - lvl) * n_points};
     for(size_t i = 0; i < n_points; ++i){
-      weights[i] *= dat.weights[j];
+      weights_scaled[i] = dat.weights[j] * weights[i];
       p[i] = dat.nodes[j];
     }
     
     // run the next level
-    ghq_inner(res, outs, lvl - 1, idx_fix, n_points, n_vars, points, weights, 
-              problem, dat, mem);
-    
-    // undo the weights
-    for(size_t i = 0; i < n_points; ++i)
-      weights[i] /= dat.weights[j];
+    ghq_inner(res, outs, lvl - 1, idx_fix, n_points, n_vars, points, 
+              weights_scaled, problem, dat, mem);
   }
 }
 } // namespace
