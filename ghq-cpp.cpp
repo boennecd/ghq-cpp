@@ -18,8 +18,9 @@
 
 /**
  * stack like object used to avoid repeated allocation. In principle,
- * every goes well if set_mark_raii() is called after all allocations in a 
- * function call and the returned object is destroyed at the end of the scope. 
+ * everything goes well if set_mark_raii() is called after all requests in a 
+ * function call and before any further function calls and subsequently the 
+ * returned object is destroyed at the end of the scope (as typical with RAII). 
  * 
  * If you define DEBUG_SIMPLE_MEM_STACK then just the right memory for each 
  * request is allocated. Thus, you will easily find errors due to too little 
@@ -408,8 +409,9 @@ public:
  *       
  *       g_i' = d/dz_i g_i(x; z_i). 
  *  
- * for some vector z_i. The function then returns the estimator of A in the
- * first elements and the derivatives of A for each z_i. The latter can be 
+ * for some fixed vector z_i. The function then returns the estimator of A in 
+ * the first element and the derivatives of A for each z_i. The latter 
+ * derivatives is stored in the order the problems are passed and can be 
  * computed with 
  * 
  *   int phi(x) g_j'(x) / g_(j1)(x)prod_(i = 1)^l g_(i1)(x) dx
@@ -456,17 +458,19 @@ public:
  *   int phi(x; 0, Sigma)g_1(x)...g_l(x) dx 
  *     = int phi(x)g_1(C.x)...g_l(C.x) dx
  *     
- * where C.C^T = Sigma is the Cholesky decomposition. The derivatives w.r.t. 
- * Sigma in this case is 
+ * where C.C^T = Sigma is the Cholesky decomposition. In the framework defined 
+ * here, we then redfine the g functions as h_i(x) = g_i(C.x). 
+ * 
+ * The derivatives w.r.t. Sigma in this case is 
  * 
  *   1/2 Sigma^(-1)
  *     [int (x.x^T - Sigma) phi(x; 0, Sigma)g_1(x)...g_l(x) dx]Sigma^(-1)
  *    = 1/2 C^(-T)
- *      [int (x.x^T - I) phi(x; 0, Sigma)g_1(C.x)...g_l(C.x) dx]C^(-1)
+ *      [int (x.x^T - I) phi(x; 0, Sigma)h_1(x)...h_l(x) dx]C^(-1)
  *      
  * so we need to compute 
  * 
- *   int x.x^T phi(x; 0, Sigma)g_1(C.x)...g_l(C.x) dx
+ *   int x.x^T phi(x; 0, Sigma)h_1(x)...h_l(x) dx
  *   
  * to compute the gradient w.r.t. Sigma.
  */
