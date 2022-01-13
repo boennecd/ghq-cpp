@@ -320,7 +320,7 @@ class adaptive_problem final : public ghq_problem  {
                v_n_out{problem.n_out()};
   
   /// the Cholesky decomposition of the Hessian
-  arma::mat C; // TODO: just store the non-zero triangle part
+  arma::mat C;
   /// the mode
   arma::vec mu;
   /// the square root of the determinant of C^T.C
@@ -366,10 +366,11 @@ public:
  *       
  *       g_i' = d/dz_i g_i(x; z_i). 
  *  
- * The function then returns the estimator of A and the derivatives of A for  
- * each z_i. The latter can be computed with 
+ * for some vector z_i. The function then returns the estimator of A in the
+ * first elements and the derivatives of A for each z_i. The latter can be 
+ * computed with 
  * 
- *   int phi(x) g_(j1)'(x)prod_(i = 1 and i != j)^l g_(i1)(x) dx
+ *   int phi(x) g_j'(x) / g_(j1)(x)prod_(i = 1)^l g_(i1)(x) dx
  */
 class combined_problem final : public ghq_problem  {
   std::vector<ghq_problem const *> problems;
@@ -404,6 +405,21 @@ public:
     (double const *point, double *hess, 
      simple_mem_stack<double> &mem) const;
 };
+
+// ghq-lp-utils.h
+
+#include <R_ext/RS.h> // for F77_NAME and F77_CALL
+
+extern "C" {
+  void F77_NAME(dtrmm)
+    (const char *side, const char *uplo, const char *transa, 
+     const char *diag, const int *m, const int *n, const double *alpha, 
+     const double *A, const int *lda, double *B, 
+     const int *ldb, 
+     size_t, size_t, size_t, size_t);
+  
+  // TODO: possibly use DTPMV for the matrix-vector calls
+}
 
 // integrand-moment-test.h
 
@@ -470,7 +486,6 @@ class mixed_mult_logit_term final : public ghq_problem {
    * (K - 1) x <number of outcomes> matrix
    */
   arma::mat const &eta;
-  // TODO: use only the upper part
   arma::mat const Sigma_chol; 
   // the category of each outcome. It is zero indexed
   arma::uvec const &which_category;
@@ -582,12 +597,15 @@ void adaptive_problem::eval
     points_trans{mem.get(n_vars() * n_points + n_points)};
   double * const __restrict__ fac{points_trans + n_vars() * n_points};
   
+  // do the matrix product points.C
+  std::copy(points, points + n_points * n_vars(), points_trans);
   {
-    // TODO: can be done more efficiency
-    arma::mat points_mat
-      (const_cast<double*>(points), n_points, n_vars(), false);
-    arma::mat points_trans_mat(points_trans, n_points, n_vars(), false);
-    points_trans_mat = points_mat * C;
+    int const m = n_points, n = n_vars();
+    constexpr double const alpha{1};
+    constexpr char const c_R{'R'}, c_U{'U'}, c_N{'N'};
+    F77_CALL(dtrmm)
+      (&c_R, &c_U, &c_N, &c_N, &m, &n, &alpha, C.memptr(), &n, 
+       points_trans, &m, 1, 1, 1, 1);
   }
   
   // add the mode
@@ -857,12 +875,15 @@ void mixed_mult_logit_term<comp_grad>::eval
   double * const __restrict__ us{mem.get(n_points * n_vars() + n_vars())}, 
          * const __restrict__ us_j{us + n_points * n_vars()};
   
+  // do the matrix product points.chol(Sigma)
+  std::copy(points, points + n_points * n_vars(), us);
   {
-    // TODO: can be done more efficiency
-    arma::mat points_mat
-      (const_cast<double*>(points), n_points, n_vars(), false);
-    arma::mat us_mat(us, n_points, n_vars(), false);
-    us_mat = points_mat * Sigma_chol;
+    int const m = n_points, n = n_vars();
+    constexpr double const alpha{1};
+    constexpr char const c_R{'R'}, c_U{'U'}, c_N{'N'};
+    F77_CALL(dtrmm)
+      (&c_R, &c_U, &c_N, &c_N, &m, &n, &alpha, Sigma_chol.memptr(), &n, 
+       us, &m, 1, 1, 1, 1);
   }
   
   if constexpr (comp_grad){
@@ -937,12 +958,15 @@ double mixed_mult_logit_term<comp_grad>::log_integrand
   double * const __restrict__ u{mem.get(2 * n_vars())}, 
          * const __restrict__ lp{u + n_vars()};
   
+  // do the matrix product point.chol(Sigma)
+  std::copy(point, point + n_vars(), u);
   {
-    // TODO: can be done more efficiency
-    arma::vec point_vec
-      (const_cast<double*>(point), n_vars(), false);
-    arma::vec us_vec(u, n_vars(), false);
-    us_vec = Sigma_chol.t() * point_vec;
+    int const m = 1, n = n_vars();
+    constexpr double const alpha{1};
+    constexpr char const c_R{'R'}, c_U{'U'}, c_N{'N'};
+    F77_CALL(dtrmm)
+      (&c_R, &c_U, &c_N, &c_N, &m, &n, &alpha, Sigma_chol.memptr(), &n, 
+       u, &m, 1, 1, 1, 1);
   }
  
   double out{};
@@ -968,21 +992,22 @@ template<bool comp_grad>
 double mixed_mult_logit_term<comp_grad>::log_integrand_grad
   (double const *point, double * __restrict__ grad,
    simple_mem_stack<double> &mem) const {
-  double * const __restrict__ u{mem.get(4 * n_vars())}, 
+  double * const __restrict__ u{mem.get(3 * n_vars())}, 
          * const __restrict__ lp{u + n_vars()},
-         * const __restrict__ lp_exp{lp + n_vars()}, 
-         * const __restrict__ grad_inner{lp_exp + n_vars()};
+         * const __restrict__ lp_exp{lp + n_vars()};
   
+  std::copy(point, point + n_vars(), u);
   {
-    // TODO: can be done more efficiency
-    arma::vec point_vec
-    (const_cast<double*>(point), n_vars(), false);
-    arma::vec us_vec(u, n_vars(), false);
-    us_vec = Sigma_chol.t() * point_vec;
+    int const m = 1, n = n_vars();
+    constexpr double const alpha{1};
+    constexpr char const c_R{'R'}, c_U{'U'}, c_N{'N'};
+    F77_CALL(dtrmm)
+      (&c_R, &c_U, &c_N, &c_N, &m, &n, &alpha, Sigma_chol.memptr(), &n, 
+       u, &m, 1, 1, 1, 1);
   }
   
   double out{};
-  std::fill(grad_inner, grad_inner + n_vars(), 0);
+  std::fill(grad, grad + n_vars(), 0);
   for(arma::uword k = 0; k < eta.n_cols; ++k){
     double denom{1};
     double const * eta_k{eta.colptr(k)};
@@ -994,20 +1019,25 @@ double mixed_mult_logit_term<comp_grad>::log_integrand_grad
     
     // handle the denominator term of the derivative
     for(size_t i = 0; i < n_vars(); ++i)
-      grad_inner[i] -= lp_exp[i] / denom;
+      grad[i] -= lp_exp[i] / denom;
     
     if(which_category[k] < 1)
       out -= log(denom);
     else {
       out += lp[which_category[k] - 1] - log(denom);
-      grad_inner[which_category[k] - 1] += 1;
+      grad[which_category[k] - 1] += 1;
     }
   }
   
-  // TODO: can be done more efficiently
-  arma::vec rhs(grad_inner, n_vars(), false);
-  arma::vec lhs(grad, n_vars(), false);
-  lhs = Sigma_chol * rhs;
+  // compute grad <- Sigma_chol.grad
+  {
+    int const m = 1, n = n_vars();
+    constexpr double const alpha{1};
+    constexpr char const c_L{'L'}, c_U{'U'}, c_N{'N'};
+    F77_CALL(dtrmm)
+      (&c_L, &c_U, &c_N, &c_N, &n, &m, &alpha, Sigma_chol.memptr(), &n,
+       grad, &n, 1, 1, 1, 1);
+  }
   
   return out;
 }
@@ -1017,19 +1047,20 @@ template<bool comp_grad>
 void mixed_mult_logit_term<comp_grad>::log_integrand_hess
   (double const *point, double *hess, 
  simple_mem_stack<double> &mem) const {
-  double * const __restrict__ u{mem.get((2 + n_vars()) * n_vars())},
-         * const __restrict__ lp_exp{u + n_vars()}, 
-         * const __restrict__ hess_inner{lp_exp + n_vars()};
+  double * const __restrict__ u{mem.get(2 * n_vars())},
+         * const __restrict__ lp_exp{u + n_vars()};
   
+  std::copy(point, point + n_vars(), u);
   {
-    // TODO: can be done more efficiency
-    arma::vec point_vec
-    (const_cast<double*>(point), n_vars(), false);
-    arma::vec us_vec(u, n_vars(), false);
-    us_vec = Sigma_chol.t() * point_vec;
+    int const m = 1, n = n_vars();
+    constexpr double const alpha{1};
+    constexpr char const c_R{'R'}, c_U{'U'}, c_N{'N'};
+    F77_CALL(dtrmm)
+      (&c_R, &c_U, &c_N, &c_N, &m, &n, &alpha, Sigma_chol.memptr(), &n, 
+       u, &m, 1, 1, 1, 1);
   }
   
-  std::fill(hess_inner, hess_inner + n_vars() * n_vars(), 0);
+  std::fill(hess, hess + n_vars() * n_vars(), 0);
   for(arma::uword k = 0; k < eta.n_cols; ++k){
     double denom{1};
     double const * eta_k{eta.colptr(k)};
@@ -1042,18 +1073,26 @@ void mixed_mult_logit_term<comp_grad>::log_integrand_hess
     for(size_t j = 0; j < n_vars(); ++j){
       for(size_t i = 0; i < j; ++i){
         double entry{lp_exp[i] * lp_exp[j] / denom_sq};
-        hess_inner[i + j * n_vars()] += entry;
-        hess_inner[j + i * n_vars()] += entry;
+        hess[i + j * n_vars()] += entry;
+        hess[j + i * n_vars()] += entry;
       }
-      hess_inner[j + j * n_vars()] -= 
+      hess[j + j * n_vars()] -= 
         (denom - lp_exp[j]) * lp_exp[j] / denom_sq;
     }
   }
   
-  // TODO: can be done more efficiently
-  arma::mat rhs(hess_inner, n_vars(),  n_vars(), false);
-  arma::mat lhs(hess, n_vars(), n_vars(), false);
-  lhs = Sigma_chol * rhs * Sigma_chol.t();
+  // compute hess <- Sigma_chol.hess.Sigma_chol^T
+  {
+    int const m = n_vars();
+    constexpr double const alpha{1};
+    constexpr char const c_R{'R'}, c_U{'U'}, c_N{'N'}, c_T{'T'}, c_L{'L'};
+    F77_CALL(dtrmm)
+      (&c_L, &c_U, &c_N, &c_N, &m, &m, &alpha, Sigma_chol.memptr(), &m, 
+       hess, &m, 1, 1, 1, 1);
+    F77_CALL(dtrmm)
+      (&c_R, &c_U, &c_T, &c_N, &m, &m, &alpha, Sigma_chol.memptr(), &m, 
+       hess, &m, 1, 1, 1, 1);
+  }
 }
 
 template class mixed_mult_logit_term<false>;

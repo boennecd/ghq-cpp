@@ -55,11 +55,11 @@ Type 'q()' to quit R.
 +     n_rep = 1000), GHQ2 = do_comp(target_size = n_points^2, n_rep = 1000), 
 +     GHQ2 = do_co .... [TRUNCATED] 
 [38;5;246m# A tibble: 3 × 13[39m
-  expression      min median `itr/sec` mem_alloc `gc/sec` n_itr  n_gc total_time
-  [3m[38;5;246m<bch:expr>[39m[23m [3m[38;5;246m<bch:tm>[39m[23m [3m[38;5;246m<bch:>[39m[23m     [3m[38;5;246m<dbl>[39m[23m [3m[38;5;246m<bch:byt>[39m[23m    [3m[38;5;246m<dbl>[39m[23m [3m[38;5;246m<int>[39m[23m [3m[38;5;246m<dbl>[39m[23m   [3m[38;5;246m<bch:tm>[39m[23m
-[38;5;250m1[39m GHQ1         9.72ms 9.92ms      101.        0B        0    51     0      507ms
-[38;5;250m2[39m GHQ2          9.7ms 9.93ms      101.        0B        0    51     0      505ms
-[38;5;250m3[39m GHQ2         8.37ms 8.51ms      117.        0B        0    59     0      504ms
+  expression     min  median `itr/sec` mem_alloc `gc/sec` n_itr  n_gc total_time
+  [3m[38;5;246m<bch:expr>[39m[23m [3m[38;5;246m<bch:t>[39m[23m [3m[38;5;246m<bch:t>[39m[23m     [3m[38;5;246m<dbl>[39m[23m [3m[38;5;246m<bch:byt>[39m[23m    [3m[38;5;246m<dbl>[39m[23m [3m[38;5;246m<int>[39m[23m [3m[38;5;246m<dbl>[39m[23m   [3m[38;5;246m<bch:tm>[39m[23m
+[38;5;250m1[39m GHQ1        9.72ms    10ms      99.1        0B        0    50     0      505ms
+[38;5;250m2[39m GHQ2        9.74ms  9.81ms     101.         0B        0    51     0      505ms
+[38;5;250m3[39m GHQ2        8.38ms  8.48ms     117.         0B        0    59     0      503ms
 [38;5;246m# … with 4 more variables: result <list>, memory <list>, time <list>, gc <list>[39m
 
 > set.seed(1)
@@ -162,12 +162,12 @@ Type 'q()' to quit R.
 [38;5;246m# A tibble: 6 × 13[39m
   expression         min   median `itr/sec` mem_alloc `gc/sec` n_itr  n_gc
   [3m[38;5;246m<bch:expr>[39m[23m    [3m[38;5;246m<bch:tm>[39m[23m [3m[38;5;246m<bch:tm>[39m[23m     [3m[38;5;246m<dbl>[39m[23m [3m[38;5;246m<bch:byt>[39m[23m    [3m[38;5;246m<dbl>[39m[23m [3m[38;5;246m<int>[39m[23m [3m[38;5;246m<dbl>[39m[23m
-[38;5;250m1[39m GHQ1            9.33ms   9.56ms     104.         0B        0    53     0
-[38;5;250m2[39m GHQ2            9.32ms   9.41ms     106.         0B        0    53     0
-[38;5;250m3[39m GHQ3            8.13ms   8.25ms     121.         0B        0    61     0
-[38;5;250m4[39m GHQ1 adaptive  12.58ms  12.78ms      78.1        0B        0    40     0
-[38;5;250m5[39m GHQ2 adaptive  12.58ms  12.73ms      78.3        0B        0    40     0
-[38;5;250m6[39m GHQ3 adaptive  10.33ms  10.56ms      94.8        0B        0    48     0
+[38;5;250m1[39m GHQ1            9.56ms  10.08ms      99.9        0B        0    50     0
+[38;5;250m2[39m GHQ2            9.58ms   9.63ms     103.         0B        0    52     0
+[38;5;250m3[39m GHQ3            8.61ms    8.7ms     114.         0B        0    58     0
+[38;5;250m4[39m GHQ1 adaptive  12.49ms  12.77ms      78.6        0B        0    40     0
+[38;5;250m5[39m GHQ2 adaptive   12.5ms  12.55ms      79.5        0B        0    40     0
+[38;5;250m6[39m GHQ3 adaptive  10.25ms  10.32ms      94.8        0B        0    48     0
 [38;5;246m# … with 5 more variables: total_time <bch:tm>, result <list>, memory <list>,[39m
 [38;5;246m#   time <list>, gc <list>[39m
 
@@ -184,7 +184,7 @@ Type 'q()' to quit R.
 [1] TRUE
 
 > all.equal(num_grad, grad_cpp[-1])
-[1] "Mean relative difference: 0.0007806551"
+[1] "Mean relative difference: 0.0007806541"
 
 > grad_cpp_comb <- mixed_mult_logit_term_grad_comb_test(eta_one = eta[, 
 +     1, drop = FALSE], which_category_one = which_cat[1] - 1, 
@@ -198,9 +198,9 @@ Type 'q()' to quit R.
 [38;5;246m# A tibble: 3 × 13[39m
   expression                 min median `itr/sec` mem_alloc `gc/sec` n_itr  n_gc
   [3m[38;5;246m<bch:expr>[39m[23m             [3m[38;5;246m<bch:t>[39m[23m [3m[38;5;246m<bch:>[39m[23m     [3m[38;5;246m<dbl>[39m[23m [3m[38;5;246m<bch:byt>[39m[23m    [3m[38;5;246m<dbl>[39m[23m [3m[38;5;246m<int>[39m[23m [3m[38;5;246m<dbl>[39m[23m
-[38;5;250m1[39m GHQ1 adaptive           16.9ms 17.1ms      58.3   18.88KB        0    30     0
-[38;5;250m2[39m GHQ2 adaptive             17ms 17.1ms      58.4        0B        0    30     0
-[38;5;250m3[39m GHQ2 adaptive combined  20.8ms   21ms      47.5    4.99KB        0    24     0
+[38;5;250m1[39m GHQ1 adaptive             16ms 16.4ms      60.6   18.88KB        0    31     0
+[38;5;250m2[39m GHQ2 adaptive             16ms 16.4ms      61.2        0B        0    31     0
+[38;5;250m3[39m GHQ2 adaptive combined  19.3ms 19.4ms      51.1    4.99KB        0    26     0
 [38;5;246m# … with 5 more variables: total_time <bch:tm>, result <list>, memory <list>,[39m
 [38;5;246m#   time <list>, gc <list>[39m
 > 
