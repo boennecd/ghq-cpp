@@ -467,6 +467,8 @@ public:
  * so we need to compute 
  * 
  *   int x.x^T phi(x; 0, Sigma)g_1(C.x)...g_l(C.x) dx
+ *   
+ * to compute the gradient w.r.t. Sigma.
  */
 class outer_prod_problem final : public ghq_problem  {
   size_t const v_n_vars,
@@ -1705,7 +1707,7 @@ which_cat <- apply(p_hats, 2L, \(x) sample.int(n + 1L, 1L, prob = x))
 rm(u, lp, p_hats)
 
 # make a brute force Monte Carlo estimate
-brute_ests <- apply(mvtnorm::rmvnorm(1e6, sigma = Sigma), 1L, \(u){
+brute_ests <- apply(mvtnorm::rmvnorm(1e5, sigma = Sigma), 1L, \(u){
   exp_lp <- exp(eta + u)
   denom <- 1 + colSums(exp_lp)
   num <- mapply(
