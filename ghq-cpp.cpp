@@ -406,6 +406,63 @@ public:
      simple_mem_stack<double> &mem) const;
 };
 
+/**
+ * computes g(x) = (1, x.x^T) where only the upper triangle is stored for the 
+ * outer product. This is useful when used with combined_problem for problems
+ * of the form 
+ * 
+ *   int phi(x; 0, Sigma)g_1(x)...g_l(x) dx 
+ *     = int phi(x)g_1(C.x)...g_l(C.x) dx
+ *     
+ * where C.C^T = Sigma is the Cholesky decomposition. The derivatives w.r.t. 
+ * Sigma in this case is 
+ * 
+ *   1/2 Sigma^(-1)
+ *     [int (x.x^T - Sigma) phi(x; 0, Sigma)g_1(x)...g_l(x) dx]Sigma^(-1)
+ *    = 1/2 C^(-T)
+ *      [int (x.x^T - I) phi(x; 0, Sigma)g_1(C.x)...g_l(C.x) dx]C^(-1)
+ *      
+ * so we need to compute 
+ * 
+ *   int x.x^T phi(x; 0, Sigma)g_1(C.x)...g_l(C.x) dx
+ */
+class outer_prod_problem final : public ghq_problem  {
+  size_t const v_n_vars,
+               v_n_out{1 + (v_n_vars * (v_n_vars + 1)) / 2};
+  
+public:
+  outer_prod_problem(size_t const n_vars);
+  
+  size_t n_vars() const { return v_n_vars; }
+  size_t n_out() const { return v_n_out; }
+  
+  void eval
+    (double const *points, size_t const n_points, double * __restrict__ outs, 
+     simple_mem_stack<double> &mem) const;
+  
+  double log_integrand
+    (double const *point, simple_mem_stack<double> &mem) const;
+  
+  double log_integrand_grad
+    (double const *point, double * __restrict__ grad,
+     simple_mem_stack<double> &mem) const;
+  
+  void log_integrand_hess
+    (double const *point, double *hess, 
+     simple_mem_stack<double> &mem) const;
+  
+  /**
+   * computes the derivatives w.r.t. Sigma given the last 
+   * (n_vars() * (n_vars() + 1)) / 2 elements of the final output, the value of
+   *  the entire integral, and the covariance matrix Sigma. 
+   *  
+   *  The result is stored in a n_vars() x n_vars() matrix. 
+   */
+  void d_Sig
+    (double * __restrict__ res, double const *out, double const integral, 
+     arma::mat const &Sigma) const ;
+};
+
 // ghq-lp-utils.h
 
 #include <R_ext/RS.h> // for F77_NAME and F77_CALL
@@ -847,6 +904,61 @@ void combined_problem::log_integrand_hess
   }
 }
 
+outer_prod_problem::outer_prod_problem(size_t const n_vars):
+  v_n_vars{n_vars} { }
+
+void outer_prod_problem::eval
+  (double const *points, size_t const n_points, double * __restrict__ outs, 
+   simple_mem_stack<double> &mem) const {
+  // have till fill in the ones
+  std::fill(outs, outs + n_points, 1);
+  outs += n_points;
+
+  // compute the outer products
+  size_t out_offset{};
+  for(size_t j = 0; j < n_vars(); ++j)
+    for(size_t k = 0; k <= j; ++k, ++out_offset)
+        for(size_t i = 0; i < n_points; ++i)
+          outs[i + out_offset * n_points] = 
+            points[i + k * n_points] * points[i + j * n_points];
+}
+
+double outer_prod_problem::log_integrand
+  (double const*, simple_mem_stack<double>&) const {
+  return 0;
+}
+
+double outer_prod_problem::log_integrand_grad
+  (double const*, double * __restrict__ gr, simple_mem_stack<double>&) const {
+  std::fill(gr, gr + n_vars(), 0);
+  return 0;
+}
+
+void outer_prod_problem::log_integrand_hess
+  (double const*, double * __restrict__ hess, simple_mem_stack<double>&) const {
+  std::fill(hess, hess + n_vars() * n_vars(), 0);
+}
+
+void outer_prod_problem::d_Sig
+  (double * __restrict__ res, double const *out, double const integral, 
+   arma::mat const &Sigma) const {
+  arma::mat outer_int(n_vars(), n_vars());
+  for(arma::uword j = 0; j < outer_int.n_cols; ++j, ++out){
+    for(arma::uword i = 0; i < j; ++i, ++out){
+      outer_int(i, j) = *out / 2;
+      outer_int(j, i) = *out / 2;
+    }
+    outer_int(j, j) = (*out - integral) / 2;
+  }
+  
+  arma::mat const sig_chol = arma::chol(Sigma);  
+  arma::mat lhs(res, n_vars(), n_vars(), false);
+  
+  lhs = arma::solve
+    (arma::trimatu(sig_chol),
+     arma::solve(arma::trimatu(sig_chol), outer_int).t());
+}
+
 // integrand-mixed-mult-logit-term.cpp
 
 template<bool comp_grad>
@@ -1154,13 +1266,17 @@ double mixed_mult_logit_term_to_R
 }
 
 // [[Rcpp::export(rng = false)]]
-std::vector<double> mixed_mult_logit_term_grad
+Rcpp::NumericVector mixed_mult_logit_term_grad
   (arma::mat const &eta, arma::mat const &Sigma, 
    arma::uvec const &which_category, arma::vec const &weights, 
    arma::vec const &nodes, size_t const target_size = 128, 
    size_t const n_rep = 1, bool const use_adaptive = false){
   simple_mem_stack<double> mem;
-  mixed_mult_logit_term<true> prob(eta, Sigma, which_category);
+  mixed_mult_logit_term<true> logit_term(eta, Sigma, which_category);
+  outer_prod_problem outer_term(Sigma.n_cols);
+  
+  std::vector<ghq_problem const *> const prob_dat{ &logit_term, &outer_term};
+  combined_problem prob(prob_dat);
   
   auto ghq_data_pass = vecs_to_ghq_data(weights, nodes);
   
@@ -1179,7 +1295,14 @@ std::vector<double> mixed_mult_logit_term_grad
       res = ghq(ghq_data_pass, prob, mem, target_size);
     }
     
-  return res;
+  // handle the derivatives w.r.t. Sigma
+  size_t const fixef_shift{logit_term.n_out()};
+  Rcpp::NumericVector out(fixef_shift + Sigma.n_cols * Sigma.n_cols);
+  std::copy(res.begin(), res.begin() + fixef_shift, &out[0]);
+  outer_term.d_Sig
+    (&out[fixef_shift], res.data() + fixef_shift, res[0], Sigma);
+    
+  return out;
 }
 
 /// to test the member functions for the adaptive method
@@ -1205,7 +1328,7 @@ Rcpp::NumericVector mixed_mult_logit_term_log_integrand
 
 /// to test that the combine class works
 // [[Rcpp::export(rng = false)]]
-std::vector<double> mixed_mult_logit_term_grad_comb_test
+Rcpp::NumericVector mixed_mult_logit_term_grad_comb_test
   (arma::mat const &eta_one, arma::mat const &eta_two, arma::mat const &Sigma, 
    arma::uvec const &which_category_one, arma::uvec const &which_category_two, 
    arma::vec const &weights, arma::vec const &nodes, 
@@ -1214,8 +1337,9 @@ std::vector<double> mixed_mult_logit_term_grad_comb_test
   simple_mem_stack<double> mem;
   mixed_mult_logit_term<true> p1(eta_one, Sigma, which_category_one), 
                               p2(eta_two, Sigma, which_category_two);
+  outer_prod_problem outer_term(Sigma.n_cols);
   
-  std::vector<ghq_problem const *> const prob_dat{ &p1, &p2};
+  std::vector<ghq_problem const *> const prob_dat{ &p1, &p2, &outer_term };
   combined_problem prob(prob_dat);
   
   auto ghq_data_pass = vecs_to_ghq_data(weights, nodes);
@@ -1235,7 +1359,14 @@ std::vector<double> mixed_mult_logit_term_grad_comb_test
       res = ghq(ghq_data_pass, prob, mem, target_size);
     }
     
-  return res;
+  // handle the derivatives w.r.t. Sigma
+  size_t const fixef_shift{p1.n_out() + p2.n_out() - 1};
+  Rcpp::NumericVector out(fixef_shift + Sigma.n_cols * Sigma.n_cols);
+  std::copy(res.begin(), res.begin() + fixef_shift, &out[0]);
+  outer_term.d_Sig
+    (&out[fixef_shift], res.data() + fixef_shift, res[0], Sigma);
+    
+  return out;
 }
 
 /***R
@@ -1360,19 +1491,38 @@ bench::mark(
 
 # compute the gradient
 num_grad <- numDeriv::grad(
-  \(eta) mixed_mult_logit_term(
-    eta = eta, Sigma = Sigma, 
-    which_category = which_cat - 1L, # zero indexed
-    weights = ghq_dat$w, nodes = ghq_dat$x, target_size = n_points^2, 
-    n_rep = 1L, use_adaptive = TRUE), 
-  eta)
+  \(par){
+    e <- par[seq_along(eta)] |> matrix(nrow = NROW(eta))
+    S <- matrix(nrow = NROW(Sigma), ncol = NCOL(Sigma))
+    S[upper.tri(S, TRUE)] <- par[-seq_along(eta)]
+    S[lower.tri(S)] <- t(S)[lower.tri(S)]
+    
+    mixed_mult_logit_term(
+      eta = e, Sigma = S, 
+      which_category = which_cat - 1L, # zero indexed
+      weights = ghq_dat$w, nodes = ghq_dat$x, target_size = n_points^2, 
+      n_rep = 1L, use_adaptive = TRUE)
+  }, c(eta, Sigma[upper.tri(Sigma, TRUE)]))
 
-do_comp_grad <- \(target_size, n_rep = 1L, use_adaptive = FALSE)
-  mixed_mult_logit_term_grad(
-    eta = eta, Sigma = Sigma, 
-    which_category = which_cat - 1L, # zero indexed
-    weights = ghq_dat$w, nodes = ghq_dat$x, target_size = target_size, 
-    n_rep = n_rep, use_adaptive = use_adaptive)
+do_comp_grad <- \(target_size, n_rep = 1L, use_adaptive = FALSE, 
+                  use_comb = FALSE){
+  res <- if(use_comb)
+    mixed_mult_logit_term_grad_comb_test(
+      eta_one = eta[,  1, drop = FALSE], which_category_one = which_cat[ 1] - 1L,
+      eta_two = eta[, -1, drop = FALSE], which_category_two = which_cat[-1] - 1L,
+      Sigma = Sigma, weights = ghq_dat$w, nodes = ghq_dat$x, 
+      target_size = target_size, n_rep = n_rep, use_adaptive = use_adaptive)
+  else
+    mixed_mult_logit_term_grad(
+      eta = eta, Sigma = Sigma, 
+      which_category = which_cat - 1L, # zero indexed
+      weights = ghq_dat$w, nodes = ghq_dat$x, target_size = target_size, 
+      n_rep = n_rep, use_adaptive = use_adaptive)
+  
+  d_Sig <- tail(res, NCOL(Sigma)^2) |> matrix(nrow = NCOL(Sigma))
+  d_Sig[upper.tri(d_Sig)] <- 2 * d_Sig[upper.tri(d_Sig)]
+  c(head(res, -NCOL(Sigma)^2), d_Sig[upper.tri(d_Sig, TRUE)])
+}
   
 grad_cpp <- do_comp_grad(n_points, use_adaptive = TRUE)
 
@@ -1382,12 +1532,7 @@ all.equal(do_comp(n_points, use_adaptive = TRUE), grad_cpp[1])
 all.equal(num_grad, grad_cpp[-1])
 
 # also work if we use the combine method
-grad_cpp_comb <- mixed_mult_logit_term_grad_comb_test(
-  eta_one = eta[,  1, drop = FALSE], which_category_one = which_cat[ 1] - 1L,
-  eta_two = eta[, -1, drop = FALSE], which_category_two = which_cat[-1] - 1L,
-  Sigma = Sigma, weights = ghq_dat$w, nodes = ghq_dat$x, 
-  target_size = n_points, n_rep = 1, use_adaptive = TRUE)
-
+grad_cpp_comb <- do_comp_grad(n_points, use_adaptive = TRUE, use_comb = TRUE)
 all.equal(grad_cpp, grad_cpp_comb)
 
 # check the computation time of 1000 evaluations
@@ -1396,9 +1541,7 @@ bench::mark(
    target_size = n_points, use_adaptive = TRUE, n_rep = 1000L),
 `GHQ2 adaptive` = do_comp_grad(
   target_size = n_points^2, use_adaptive = TRUE, n_rep = 1000L), 
-`GHQ2 adaptive combined` = mixed_mult_logit_term_grad_comb_test(
-  eta_one = eta[,  1, drop = FALSE], which_category_one = which_cat[ 1] - 1L,
-  eta_two = eta[, -1, drop = FALSE], which_category_two = which_cat[-1] - 1L,
-  Sigma = Sigma, weights = ghq_dat$w, nodes = ghq_dat$x, 
-  target_size = n_points^2, n_rep = 1000L, use_adaptive = TRUE))
+`GHQ2 adaptive combined` = 
+  do_comp_grad(n_points^2, use_adaptive = TRUE, use_comb = TRUE, 
+               n_rep = 1000L))
 */
