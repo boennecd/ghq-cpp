@@ -9,16 +9,50 @@
 #include <iterator>
 #include <stack>
 #include <list>
+#include <cstddef>
+
+#ifdef DEBUG_SIMPLE_MEM_STACK
+#include <memory>
+#include <algorithm>
+#endif
 
 /**
  * stack like object used to avoid repeated allocation. In principle,
  * every goes well if set_mark_raii() is called after all allocations in a 
  * function call and the returned object is destroyed at the end of the scope. 
+ * 
+ * If you define DEBUG_SIMPLE_MEM_STACK then just the right memory for each 
+ * request is allocated. Thus, you will easily find errors due to too little 
+ * memory being requested. 
  */
 template<class T> 
 class simple_mem_stack {
+#ifdef DEBUG_SIMPLE_MEM_STACK
+  class block_container {
+    size_t const n_ele;
+    std::unique_ptr<double[]> mem{new double[n_ele]};
+    
+  public:
+    using iterator = T*;
+    
+    block_container(size_t const n_ele): n_ele{n_ele} { }
+    block_container(const block_container &o):
+      n_ele{o.n_ele},
+      mem{new double[n_ele]} {
+        std::copy(o.begin(), o.end(), begin());
+      }
+    
+    iterator begin() { return mem.get(); }
+    iterator end() { return mem.get() + n_ele; }
+    size_t size() const { return n_ele; }
+  };
+  
+#else // #ifdef DEBUG_SIMPLE_MEM_STACK
   // TODO: maybe replace with a simpler container?
   using block_container = std::vector<T>; 
+  
+#endif
+  
   using outer_container = std::list<block_container>;
   /// holds the allocated memory in blocks
   outer_container memory;
@@ -34,8 +68,7 @@ class simple_mem_stack {
     
   public:
     using iterator_category = std::forward_iterator_tag;
-    using difference_type   = 
-      typename block_container::iterator::difference_type;
+    using difference_type   = std::ptrdiff_t;
     using value_type        = T;
     using pointer           = T*;
     using reference         = T&;
@@ -113,7 +146,11 @@ class simple_mem_stack {
   iterator cur_head;
   
   /// the minimum size of the blocks
+#ifdef DEBUG_SIMPLE_MEM_STACK
+  static constexpr size_t min_block_size{0};
+#else 
   static constexpr size_t min_block_size{32768};
+#endif
   
   /**
    * creates a new block of given minimum size. The new block size will be
@@ -125,7 +162,12 @@ class simple_mem_stack {
       
     if(it == memory.end()){
       // did not find a block of the appropriate size. Create a new block
+#ifdef DEBUG_SIMPLE_MEM_STACK
+      // allocate just enough memory
+      memory.emplace_back(n_ele);
+#else 
       memory.emplace_back(std::max(n_ele, memory.back().size() * 2L));
+#endif
       it = std::prev(memory.end());
     }
     
@@ -1823,7 +1865,7 @@ brute_ests <- apply(mvtnorm::rmvnorm(1e5, sigma = Sigma), 1L, \(u){
   num <- mapply(
     \(i, j) if(i == 1L) 1 else exp_lp[i - 1L, j], i = which_cat,
     j = 1:NCOL(eta))
-  
+
   prod(num / denom) * pnorm(probit_eta + z %*% u)
 })
 se <- sd(brute_ests) / sqrt(length(brute_ests))
