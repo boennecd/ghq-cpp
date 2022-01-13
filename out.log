@@ -1,0 +1,207 @@
+
+R version 4.1.2 (2021-11-01) -- "Bird Hippie"
+Copyright (C) 2021 The R Foundation for Statistical Computing
+Platform: x86_64-pc-linux-gnu (64-bit)
+
+R is free software and comes with ABSOLUTELY NO WARRANTY.
+You are welcome to redistribute it under certain conditions.
+Type 'license()' or 'licence()' for distribution details.
+
+  Natural language support but running in an English locale
+
+R is a collaborative project with many contributors.
+Type 'contributors()' for more information and
+'citation()' on how to cite R or R packages in publications.
+
+Type 'demo()' for some demos, 'help()' for on-line help, or
+'help.start()' for an HTML browser interface to help.
+Type 'q()' to quit R.
+
+* Project '~/Dropbox/skole_backup/postdoc/ghq-cpp' loaded. [renv 0.13.2]
+> Rcpp::sourceCpp('ghq-cpp.cpp')
+
+> set.seed(1)
+
+> n <- 3
+
+> Sigma <- as.matrix(drop(rWishart(1, 2 * n, diag(1/n, 
++     n))))
+
+> mu <- rnorm(n)
+
+> tval <- runif(n, -1)
+
+> n_points <- 10
+
+> ghq_dat <- fastGHQuad::gaussHermiteData(n_points)
+
+> truth <- drop(exp(tval %*% mu + tval %*% Sigma %*% 
++     tval/2))
+
+> do_comp <- function(target_size, n_rep = 1) mult_norm_moment(t = tval, 
++     mu = mu, Sigma = Sigma, weights = ghq_dat$w, nodes = ghq_dat$x, 
++     .... [TRUNCATED] 
+
+> all.equal(do_comp(1), truth)
+[1] "Mean relative difference: 1.075019e-07"
+
+> all.equal(do_comp(n_points), truth)
+[1] "Mean relative difference: 1.075019e-07"
+
+> all.equal(do_comp(n_points^2), truth)
+[1] "Mean relative difference: 1.075019e-07"
+
+> bench::mark(GHQ1 = do_comp(target_size = n_points, 
++     n_rep = 1000), GHQ2 = do_comp(target_size = n_points^2, n_rep = 1000), 
++     GHQ2 = do_co .... [TRUNCATED] 
+[38;5;246m# A tibble: 3 × 13[39m
+  expression     min  median `itr/sec` mem_alloc `gc/sec` n_itr  n_gc total_time
+  [3m[38;5;246m<bch:expr>[39m[23m [3m[38;5;246m<bch:t>[39m[23m [3m[38;5;246m<bch:t>[39m[23m     [3m[38;5;246m<dbl>[39m[23m [3m[38;5;246m<bch:byt>[39m[23m    [3m[38;5;246m<dbl>[39m[23m [3m[38;5;246m<int>[39m[23m [3m[38;5;246m<dbl>[39m[23m   [3m[38;5;246m<bch:tm>[39m[23m
+[38;5;250m1[39m GHQ1        9.92ms 10.14ms      97.4        0B        0    49     0      503ms
+[38;5;250m2[39m GHQ2        9.73ms 10.36ms      96.8        0B        0    49     0      506ms
+[38;5;250m3[39m GHQ2        8.69ms  9.14ms     110.         0B        0    55     0      502ms
+[38;5;246m# … with 4 more variables: result <list>, memory <list>, time <list>, gc <list>[39m
+
+> set.seed(1)
+
+> n_obs <- 3
+
+> n <- 3
+
+> Sigma <- as.matrix(drop(rWishart(1, 2 * n, diag(1/n, 
++     n))))
+
+> eta <- matrix(runif(n_obs * n, -1), nrow = n)
+
+> u <- drop(mvtnorm::rmvnorm(1, sigma = Sigma))
+
+> lp <- eta + u
+
+> p_hats <- rbind(1, exp(lp))/rep(1 + colSums(exp(lp)), 
++     each = n + 1)
+
+> which_cat <- apply(p_hats, 2, function(x) sample.int(n + 
++     1, 1, prob = x))
+
+> rm(u, lp, p_hats)
+
+> brute_ests <- apply(mvtnorm::rmvnorm(1e+06, sigma = Sigma), 
++     1, function(u) {
++         exp_lp <- exp(eta + u)
++         denom <- 1 + colSums( .... [TRUNCATED] 
+
+> se <- sd(brute_ests)/sqrt(length(brute_ests))
+
+> brute_est <- mean(brute_ests)
+
+> n_points <- 5
+
+> ghq_dat <- fastGHQuad::gaussHermiteData(n_points)
+
+> do_comp <- function(target_size, n_rep = 1, use_adaptive = FALSE) mixed_mult_logit_term(eta = eta, 
++     Sigma = Sigma, which_category = which_cat  .... [TRUNCATED] 
+
+> se/abs(brute_est)
+[1] 0.001534806
+
+> all.equal(do_comp(n_points), brute_est)
+[1] "Mean relative difference: 0.03265323"
+
+> all.equal(do_comp(n_points^2), brute_est)
+[1] "Mean relative difference: 0.03265323"
+
+> all.equal(do_comp(n_points^3), brute_est)
+[1] "Mean relative difference: 0.03265323"
+
+> log_integrand <- function(x) {
++     x <- drop(crossprod(chol(Sigma), x))
++     exp_lp <- exp(eta + x)
++     denom <- 1 + colSums(exp_lp)
++     num  .... [TRUNCATED] 
+
+> log_integrand_cpp <- function(ders) mixed_mult_logit_term_log_integrand(point = point, 
++     eta = eta, Sigma = Sigma, which_category = which_cat - .... [TRUNCATED] 
+
+> point <- runif(n, -1)
+
+> all.equal(log_integrand(point), log_integrand_cpp(0))
+[1] TRUE
+
+> f <- log_integrand_cpp(1)[1]
+
+> g <- log_integrand_cpp(1)[-1]
+
+> all.equal(log_integrand(point), f)
+[1] TRUE
+
+> all.equal(numDeriv::grad(log_integrand, point), g)
+[1] TRUE
+
+> all.equal(c(numDeriv::hessian(log_integrand, point)), 
++     log_integrand_cpp(2))
+[1] TRUE
+
+> se/abs(brute_est)
+[1] 0.001534806
+
+> all.equal(do_comp(n_points, use_adaptive = TRUE), 
++     brute_est)
+[1] "Mean relative difference: 0.0005337538"
+
+> all.equal(do_comp(n_points^2, use_adaptive = TRUE), 
++     brute_est)
+[1] "Mean relative difference: 0.0005337538"
+
+> all.equal(do_comp(n_points^3, use_adaptive = TRUE), 
++     brute_est)
+[1] "Mean relative difference: 0.0005337538"
+
+> bench::mark(GHQ1 = do_comp(target_size = n_points, 
++     use_adaptive = FALSE, n_rep = 1000), GHQ2 = do_comp(target_size = n_points^2, 
++     use_a .... [TRUNCATED] 
+[38;5;246m# A tibble: 6 × 13[39m
+  expression         min   median `itr/sec` mem_alloc `gc/sec` n_itr  n_gc
+  [3m[38;5;246m<bch:expr>[39m[23m    [3m[38;5;246m<bch:tm>[39m[23m [3m[38;5;246m<bch:tm>[39m[23m     [3m[38;5;246m<dbl>[39m[23m [3m[38;5;246m<bch:byt>[39m[23m    [3m[38;5;246m<dbl>[39m[23m [3m[38;5;246m<int>[39m[23m [3m[38;5;246m<dbl>[39m[23m
+[38;5;250m1[39m GHQ1            9.53ms   9.74ms     102.         0B        0    52     0
+[38;5;250m2[39m GHQ2            9.41ms   9.53ms     105.         0B        0    53     0
+[38;5;250m3[39m GHQ3            8.25ms   8.37ms     120.         0B        0    60     0
+[38;5;250m4[39m GHQ1 adaptive   12.7ms  12.93ms      77.0        0B        0    39     0
+[38;5;250m5[39m GHQ2 adaptive  12.71ms  12.83ms      77.8        0B        0    39     0
+[38;5;250m6[39m GHQ3 adaptive   10.6ms  10.81ms      92.5        0B        0    47     0
+[38;5;246m# … with 5 more variables: total_time <bch:tm>, result <list>, memory <list>,[39m
+[38;5;246m#   time <list>, gc <list>[39m
+
+> num_grad <- numDeriv::grad(function(eta) mixed_mult_logit_term(eta = eta, 
++     Sigma = Sigma, which_category = which_cat - 1, weights = ghq_dat$w, .... [TRUNCATED] 
+
+> do_comp_grad <- function(target_size, n_rep = 1, use_adaptive = FALSE) mixed_mult_logit_term_grad(eta = eta, 
++     Sigma = Sigma, which_category =  .... [TRUNCATED] 
+
+> grad_cpp <- do_comp_grad(n_points, use_adaptive = TRUE)
+
+> all.equal(do_comp(n_points, use_adaptive = TRUE), 
++     grad_cpp[1])
+[1] TRUE
+
+> all.equal(num_grad, grad_cpp[-1])
+[1] "Mean relative difference: 0.0007806551"
+
+> grad_cpp_comb <- mixed_mult_logit_term_grad_comb_test(eta_one = eta[, 
++     1, drop = FALSE], which_category_one = which_cat[1] - 1, 
++     eta_two .... [TRUNCATED] 
+
+> all.equal(grad_cpp, grad_cpp_comb)
+[1] TRUE
+
+> bench::mark(`GHQ1 adaptive` = do_comp_grad(target_size = n_points, 
++     use_adaptive = TRUE, n_rep = 1000), `GHQ2 adaptive` = do_comp_grad(target_ .... [TRUNCATED] 
+[38;5;246m# A tibble: 3 × 13[39m
+  expression                 min median `itr/sec` mem_alloc `gc/sec` n_itr  n_gc
+  [3m[38;5;246m<bch:expr>[39m[23m             [3m[38;5;246m<bch:t>[39m[23m [3m[38;5;246m<bch:>[39m[23m     [3m[38;5;246m<dbl>[39m[23m [3m[38;5;246m<bch:byt>[39m[23m    [3m[38;5;246m<dbl>[39m[23m [3m[38;5;246m<int>[39m[23m [3m[38;5;246m<dbl>[39m[23m
+[38;5;250m1[39m GHQ1 adaptive           16.8ms   17ms      58.6   18.88KB        0    30     0
+[38;5;250m2[39m GHQ2 adaptive           16.8ms 16.9ms      59.0        0B        0    30     0
+[38;5;250m3[39m GHQ2 adaptive combined  20.8ms   21ms      47.5    4.99KB        0    24     0
+[38;5;246m# … with 5 more variables: total_time <bch:tm>, result <list>, memory <list>,[39m
+[38;5;246m#   time <list>, gc <list>[39m
+> 
+> 
