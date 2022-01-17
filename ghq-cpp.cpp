@@ -676,6 +676,50 @@ public:
      simple_mem_stack<double> &mem) const;
 };
 
+// integrand-expected-survival.h
+
+/**
+ * computes the expected survival. That is 
+ * 
+ *   E(exp(-sum w_i[i] * exp(eta[i] + M.U)))
+ *   
+ * given n weights and offsets w and eta and a matrix M x R. U is assumed to be 
+ * a R dimensional random variable which is ~ N(0, Sigma).
+ * 
+ * TODO: something about the derivatives.
+ */
+template<bool comp_grad = false>
+class expected_survival_term final : public ghq_problem {
+  arma::vec const &eta, &weights;
+  arma::mat const M_Sigma_chol_t;
+  
+  size_t const v_n_vars = M_Sigma_chol_t.n_cols, 
+               v_n_out{comp_grad ? 1 : 1};
+  
+public:
+  expected_survival_term
+  (arma::vec const &eta, arma::vec const &weights, arma::mat const &M, 
+   arma::mat const &Sigma);
+  
+  size_t n_vars() const { return v_n_vars; }
+  size_t n_out() const { return v_n_out; }
+  
+  void eval
+    (double const *points, size_t const n_points, double * __restrict__ outs, 
+     simple_mem_stack<double> &mem) const;
+  
+  double log_integrand
+    (double const *point, simple_mem_stack<double> &mem) const;
+  
+  double log_integrand_grad
+    (double const *point, double * __restrict__ grad,
+     simple_mem_stack<double> &mem) const;
+  
+  void log_integrand_hess
+    (double const *point, double *hess, 
+     simple_mem_stack<double> &mem) const;
+};
+
 // ghq.cpp
 
 adaptive_problem::mode_problem::mode_problem
@@ -1420,6 +1464,138 @@ void mixed_probit_term<comp_grad>::log_integrand_hess
 template class mixed_probit_term<false>;
 template class mixed_probit_term<true>;
 
+// integrand-expected-survival.cpp
+
+template<bool comp_grad>
+expected_survival_term<comp_grad>::expected_survival_term
+  (arma::vec const &eta, arma::vec const &weights, arma::mat const &M, 
+   arma::mat const &Sigma):
+  eta{eta}, weights{weights}, M_Sigma_chol_t{M * arma::chol(Sigma).t()} {
+    if(eta.n_elem != weights.n_elem)
+      throw std::invalid_argument("eta.n_elem != weights.n_elem");
+    else if(eta.n_elem != M_Sigma_chol_t.n_rows)
+      throw std::invalid_argument("eta.n_elem != M_Sigma_chol_t.n_rows");
+  }
+
+// TODO: test
+template<bool comp_grad>
+void expected_survival_term<comp_grad>::eval
+  (double const *points, size_t const n_points, double * __restrict__ outs, 
+   simple_mem_stack<double> &mem) const {
+  size_t const n_lps = M_Sigma_chol_t.n_rows;
+  double * const __restrict__ lps{mem.get(n_lps * n_points)};
+  
+  // add the offset
+  for(size_t j = 0; j < n_points; ++j)
+    std::copy(eta.begin(), eta.end(), lps + j * n_lps);
+  
+  // add the terms from the random effects
+  {
+    double const * m{M_Sigma_chol_t.begin()};
+    for(size_t k = 0; k < n_vars(); ++k)
+      for(size_t j = 0; j < n_points; ++j)
+        for(size_t i = 0; i < n_lps; ++i)
+          lps[i + j * n_lps] += m[i + k * n_lps] * points[j + k * n_points];
+  }
+  
+  // compute the weighted sum
+  for(size_t j = 0; j < n_points; ++j){
+    outs[j] = 0;
+    for(size_t i = 0; i < n_lps; ++i)
+      outs[j] -= weights[i] * std::exp(lps[i + j * n_lps]);
+    
+    outs[j] = std::exp(outs[j]);
+  }
+  
+  // TODO: implement the gradient
+}
+
+// TODO: test
+template<bool comp_grad>
+double expected_survival_term<comp_grad>::log_integrand
+  (double const *point, simple_mem_stack<double> &mem) const {
+  size_t const n_lps = M_Sigma_chol_t.n_rows;
+  double * const __restrict__ lp{mem.get(n_lps)};
+  std::copy(eta.begin(), eta.end(), lp);
+  
+  {
+    double const * m{M_Sigma_chol_t.begin()};
+    for(size_t k = 0; k < n_vars(); ++k)
+      for(size_t i = 0; i < n_lps; ++i)
+        lp[i] += m[i + k * n_lps] * point[k];
+  }
+  
+  double out{};
+  for(size_t i = 0; i < n_lps; ++i)
+    out -= weights[i] * std::exp(lp[i]);
+  
+  return out;
+}
+
+// TODO: test
+template<bool comp_grad>
+double expected_survival_term<comp_grad>::log_integrand_grad
+  (double const *point, double * __restrict__ grad,
+   simple_mem_stack<double> &mem) const {
+  size_t const n_lps = M_Sigma_chol_t.n_rows;
+  double * const __restrict__ lp{mem.get(n_lps)};
+  std::copy(eta.begin(), eta.end(), lp);
+  
+  {
+    double const * m{M_Sigma_chol_t.begin()};
+    for(size_t k = 0; k < n_vars(); ++k)
+      for(size_t i = 0; i < n_lps; ++i)
+        lp[i] += m[i + k * n_lps] * point[k];
+  }
+  
+  double out{};
+  for(size_t i = 0; i < n_lps; ++i){
+    lp[i] = -weights[i] * std::exp(lp[i]); // the derivative w.r.t. lp
+    out += lp[i];
+  }
+  
+  std::fill(grad, grad + n_vars(), 0);
+  double const * m{M_Sigma_chol_t.begin()};
+  for(size_t k = 0; k < n_vars(); ++k)
+    for(size_t i = 0; i < n_lps; ++i)
+      grad[k] += m[i + k * n_lps] * lp[i];
+  
+  return out;
+}
+
+// TODO: test
+template<bool comp_grad>
+void expected_survival_term<comp_grad>::log_integrand_hess
+  (double const *point, double *hess, simple_mem_stack<double> &mem) const {
+  size_t const n_lps = M_Sigma_chol_t.n_rows;
+  double * const __restrict__ lp{mem.get(n_lps)};
+  std::copy(eta.begin(), eta.end(), lp);
+  
+  {
+    double const * m{M_Sigma_chol_t.begin()};
+    for(size_t k = 0; k < n_vars(); ++k)
+      for(size_t i = 0; i < n_lps; ++i)
+        lp[i] += m[i + k * n_lps] * point[k];
+  }
+  
+  double out{};
+  for(size_t i = 0; i < n_lps; ++i){
+    lp[i] = -weights[i] * std::exp(lp[i]); // the derivative w.r.t. lp
+    out += lp[i];
+  }
+  
+  // TODO: do this smarter
+  arma::mat H(hess, n_vars(), n_vars(), false);
+  arma::mat dum(n_lps, n_lps, arma::fill::zeros);
+  for(arma::uword i = 0; i < n_lps; ++i)
+    dum(i, i) = lp[i];
+  
+  H = M_Sigma_chol_t.t() * dum * M_Sigma_chol_t;
+}
+
+template class expected_survival_term<false>;
+template class expected_survival_term<true>;
+
 // R-interface.cpp
 
 ghq_data vecs_to_ghq_data(arma::vec const &weights, arma::vec const &nodes){
@@ -1595,6 +1771,35 @@ Rcpp::NumericVector mixed_mult_logit_n_probit_grad
   return out;
 }
 
+// [[Rcpp::export("expected_survival_term", rng = false)]]
+double expected_survival_term_to_R
+  (arma::vec const &eta, arma::vec const &ws, 
+   arma::mat const &M, arma::mat const &Sigma, arma::vec const &weights, 
+   arma::vec const &nodes, size_t const target_size = 128, 
+   size_t const n_rep = 1, bool const use_adaptive = false){
+  simple_mem_stack<double> mem;
+  expected_survival_term prob(eta, ws, M, Sigma);
+  
+  auto ghq_data_pass = vecs_to_ghq_data(weights, nodes);
+  
+  std::vector<double> res;  
+  if(use_adaptive){
+    adaptive_problem prob_adap(prob, mem);
+    
+    for(size_t i = 0; i < n_rep; ++i){
+      mem.reset();
+      res = ghq(ghq_data_pass, prob_adap, mem, target_size);
+    }
+    
+  } else 
+    for(size_t i = 0; i < n_rep; ++i){
+      mem.reset();
+      res = ghq(ghq_data_pass, prob, mem, target_size);
+    }
+    
+  return res[0];
+}
+
 /// to test the member functions for the adaptive method
 // [[Rcpp::export(rng = false)]]
 Rcpp::NumericVector mixed_probit_log_integrand
@@ -1610,6 +1815,27 @@ Rcpp::NumericVector mixed_probit_log_integrand
     out[0] = prob.log_integrand_grad(point.memptr(), &out[1], mem);
     return out;
   } 
+  
+  Rcpp::NumericVector out(prob.n_vars() * prob.n_vars());
+  prob.log_integrand_hess(point.memptr(), &out[0], mem);
+  return out;
+}
+
+/// to test the member functions for the adaptive method
+// [[Rcpp::export(rng = false)]]
+Rcpp::NumericVector expected_survival_term_log_integrand
+  (arma::vec const &point, arma::vec const &eta, arma::vec const &weights, 
+   arma::mat const &M, arma::mat const &Sigma, unsigned const ders){
+  simple_mem_stack<double> mem;
+  expected_survival_term prob(eta, weights, M, Sigma);
+  
+  if(ders == 0){
+    return { prob.log_integrand(point.memptr(), mem) };
+  } else if(ders == 1){
+    Rcpp::NumericVector out(prob.n_vars() + 1);
+    out[0] = prob.log_integrand_grad(point.memptr(), &out[1], mem);
+    return out;
+  }
   
   Rcpp::NumericVector out(prob.n_vars() * prob.n_vars());
   prob.log_integrand_hess(point.memptr(), &out[0], mem);
@@ -1978,5 +2204,69 @@ bench::mark(
   Grad = do_comp_grad(target_size = n_points^2, n_rep = 1000), 
   `Grad adaptive` = do_comp_grad(
     target_size = n_points^2, n_rep = 1000, use_adaptive = TRUE), 
+  check = FALSE)
+
+# example for the expected survival function
+etas <- c(-0.6381, -0.6343, -0.6285, -0.6227, -0.6193, -0.6212, -0.6313, -0.6515, -0.6827, -0.724, -0.7723, -0.8229, -0.8699, -0.9073, -0.93)
+ws <- c(0.0473878636519986, 0.10842748431263, 0.165122315533235, 0.215065333801771, 0.256205263034596, 0.286856653590245, 0.305764321437458, 0.312154084712178, 0.305764321437458, 0.286856653590245, 0.256205263034596, 0.215065333801771, 0.165122315533235, 0.10842748431263, 0.0473878636519986)
+M <- structure(c(0.3115, 0.312, 0.3128, 0.3141, 0.3156, 0.3173, 0.3192, 0.3212, 0.3232, 0.3251, 0.3269, 0.3284, 0.3296, 0.3305, 0.331, -0.1315, -0.1378, -0.1488, -0.1641, -0.1831, -0.205, -0.2288, -0.2537, -0.2786, -0.3024, -0.3243, -0.3433, -0.3586, -0.3696, -0.3758, -0.4, -0.4, -0.4, -0.4, -0.4, -0.4, -0.4, -0.4, -0.4, -0.4, -0.4, -0.4, -0.4, -0.4, -0.4, -1.2253, -1.1941, -1.1392, -1.0629, -0.9683, -0.8593, -0.7404, -0.6164, -0.4924, -0.3734, -0.2644, -0.1699, -0.0936, -0.0387, -0.0074, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1), .Dim = c(15L, 5L))
+V <- structure(c(0.35, 0.08, -0.05, 0.01, 0, 0.08, 1.92, -0.24, -0.04, 0, -0.05, -0.24, 0.32, 0.09, 0, 0.01, -0.04, 0.09, 0.12, 0, 0, 0, 0, 0, 0.04), .Dim = c(5L, 5L))
+n <- NCOL(V)
+
+# make a brute force Monte Carlo estimate
+brute_ests <- apply(mvtnorm::rmvnorm(1e6, sigma = V), 1L, \(u){
+  x <- M %*% u |> drop()
+  -sum(ws * exp(x + etas)) |> exp()
+})
+se <- sd(brute_ests) / sqrt(length(brute_ests))
+brute_est <- mean(brute_ests)
+
+# use the C++ function
+n_points <- 2L
+ghq_dat <- fastGHQuad::gaussHermiteData(n_points)
+
+do_comp <- \(target_size, n_rep = 1L, use_adaptive = FALSE)
+  expected_survival_term(
+    eta = etas, ws = ws, M = M, Sigma = V,
+    weights = ghq_dat$w, nodes = ghq_dat$x, target_size = target_size, 
+    n_rep = n_rep, use_adaptive = use_adaptive)
+
+se / abs(brute_est) # ~ what we expect
+all.equal(do_comp(n_points), brute_est)
+
+# we can check that the member functions for adaptive GHQ are correct
+log_integrand <- \(x){
+  x <- crossprod(chol(V), x)
+  x <- M %*% x |> drop()
+  -sum(ws * exp(x + etas))
+}
+log_integrand_cpp <- \(ders)
+  expected_survival_term_log_integrand(
+    point = point, eta = etas, weights = ws, M = M, Sigma = V, ders = ders)
+
+point <- runif(n, -1)
+all.equal(log_integrand(point), log_integrand_cpp(0))
+
+f <- log_integrand_cpp(1)[1]
+g <- log_integrand_cpp(1)[-1]
+all.equal(log_integrand(point), f)
+all.equal(numDeriv::grad(log_integrand, point), g)
+
+all.equal(numDeriv::hessian(log_integrand, point) |> c(), log_integrand_cpp(2L))
+
+# check the quadrature precision with the adaptive version
+se / abs(brute_est) # ~ what we expect
+all.equal(do_comp(n_points, use_adaptive = TRUE), brute_est)
+
+# time it takes to do the computation 1000 times
+bench::mark(
+  GHQ1 = do_comp(
+    target_size = n_points, use_adaptive = FALSE, n_rep = 1000L),
+  GHQ5 = do_comp(
+    target_size = n_points^5, use_adaptive = FALSE ,n_rep = 1000L),
+  `GHQ1 adaptive` = do_comp(
+    target_size = n_points, use_adaptive = TRUE, n_rep = 1000L),
+  `GHQ5 adaptive` = do_comp(
+    target_size = n_points^5, use_adaptive = TRUE ,n_rep = 1000L),
   check = FALSE)
 */
