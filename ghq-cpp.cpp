@@ -362,7 +362,10 @@ class adaptive_problem final : public ghq_problem  {
   size_t const v_n_vars{problem.n_vars()},  
                v_n_out{problem.n_out()};
   
-  /// the Cholesky decomposition of the Hessian
+  /**
+   * the Cholesky decomposition of the -H^(-1) where H is the Hessian at the 
+   * mode
+   */
   arma::mat C;
   /// the mode
   arma::vec mu;
@@ -411,7 +414,7 @@ public:
  *  
  * for some fixed vector z_i. The function then returns the estimator of A in 
  * the first element and the derivatives of A for each z_i. The latter 
- * derivatives is stored in the order the problems are passed and can be 
+ * derivatives are stored in the order the problems are passed and can be 
  * computed with 
  * 
  *   int phi(x) g_j'(x) / g_(j1)(x)prod_(i = 1)^l g_(i1)(x) dx
@@ -419,13 +422,22 @@ public:
 class combined_problem final : public ghq_problem  {
   std::vector<ghq_problem const *> problems;
   
+  // to avoid the virtual dispatch
+  std::vector<size_t> const n_outs
+  {
+    ([&]{
+      std::vector<size_t> out;
+      out.reserve(problems.size());
+      for(auto p : problems)
+        out.emplace_back(p->n_out());
+      return out;
+    })()
+  };
+  
   size_t const v_n_vars{ problems.size() == 0 ? 0 : problems[0]->n_vars() };
   size_t const n_out_inner
     {std::accumulate(
-        problems.begin(), problems.end(), static_cast<size_t>(0),
-        [](size_t res, ghq_problem const *p){ 
-          return res + p->n_out(); 
-        })};
+        n_outs.begin(), n_outs.end(), static_cast<size_t>(0))};
   size_t const v_n_out{n_out_inner - problems.size() + 1};
   
 public:
@@ -575,14 +587,14 @@ public:
  *   exp(eta[i, k - 1] + u[k - 1]) / 
  *     (1 + sum_(j = 1)^K exp(eta[i, j - 1] + u[j - 1]))
  *     
- *  and the probability of the reference level, k = 1, is 
+ *  and the probability of the reference level, k = 0, is 
  *  
  *    1 / (1 + sum_(j = 1)^K exp(eta[i, j - 1] + u[j - 1]))
  *    
  *  The random effect is assumed to be N(0, Sigma). 
  *  
  *  If the gradient is required, the first output is the integral and the next 
- *  elements are the gradients w.r.t. eta matrix.
+ *  elements are the gradients w.r.t. the eta matrix.
  */
 template<bool comp_grad = false>
 class mixed_mult_logit_term final : public ghq_problem {
@@ -628,8 +640,9 @@ public:
  * 
  *   g(u) = Phi(eta + z^Tu)
  *   
- * The function can easily be extended to more than one probit factor if needed. 
- * The gradient is with respect to the scalar eta and the vector z.
+ * where u ~ N(0, Sigma). The function can easily be extended to more than one 
+ * probit factor if needed. The gradient is with respect to the scalar eta and 
+ * the vector z.
  */
 template<bool comp_grad = false>
 class mixed_probit_term final : public ghq_problem {
@@ -927,19 +940,20 @@ void combined_problem::eval
   std::fill(integrands, integrands + n_points, 1);
   {
     double * outs_inner_p{outs_inner};
+    size_t pi{};
     for(auto p : problems){
       p->eval(points, n_points, outs_inner_p, mem);
       
       for(size_t i = 0; i < n_points; ++i)
         integrands[i] *= outs_inner_p[i];
-      outs_inner_p += p->n_out() * n_points;
+      outs_inner_p += n_outs[pi] * n_points;
+      ++pi;
     }
   }
   
   // compute the derivatives
   double const * outs_inner_p{outs_inner};
-  for(ghq_problem const * p : problems){
-    size_t const n_outs_p{p->n_out()};
+  for(size_t const n_outs_p : n_outs){
     if(n_outs_p > 1){
       // compute the scales to use for the derivatives
       for(size_t i = 0; i < n_points; ++i, ++outs_inner_p)
