@@ -3,14 +3,16 @@
 
 #include "ghq.h"
 
+namespace ghqCpp {
+
 /**
- * computes the expected survival. That is 
- * 
+ * computes the expected survival. That is
+ *
  *   E(exp(-sum w_i[i] * exp(eta[i] + (M.U)[i])))
- *   
- * given n weights and offsets w and eta and a matrix M of dimension n x R. U is 
+ *
+ * given n weights and offsets w and eta and a matrix M of dimension n x R. U is
  * assumed to be a R dimensional random variable which is ~ N(0, Sigma).
- * 
+ *
  * The derivatives are computed w.r.t. the vector eta and the matrix M
  */
 template<bool comp_grad = false>
@@ -46,5 +48,7 @@ public:
     (double const *point, double *hess,
      simple_mem_stack<double> &mem) const;
 };
+
+} // namespace ghqCpp
 
 #endif

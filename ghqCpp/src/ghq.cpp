@@ -1,6 +1,8 @@
 #include "ghq.h"
 #include "ghq-lp-utils.h"
 
+namespace ghqCpp {
+
 adaptive_problem::mode_problem::mode_problem
   (ghq_problem const &problem, simple_mem_stack<double> &mem):
   problem{problem}, mem{mem} { }
@@ -385,3 +387,5 @@ void outer_prod_problem::d_Sig
     (arma::trimatu(sig_chol),
      arma::solve(arma::trimatu(sig_chol), outer_int).t());
 }
+
+} // namespace ghqCpp

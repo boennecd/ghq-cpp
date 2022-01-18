@@ -12,6 +12,8 @@
 #include <algorithm>
 #endif
 
+namespace ghqCpp {
+
 /**
  * stack like object used to avoid repeated allocation. In principle,
  * everything goes well if set_mark_raii() is called after all requests in a
@@ -255,5 +257,7 @@ public:
     return { *this, cur_head };
   }
 };
+
+} // namespace ghqCpp
 
 #endif

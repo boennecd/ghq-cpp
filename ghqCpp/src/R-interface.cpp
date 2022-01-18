@@ -1,5 +1,7 @@
 #include "integrand-expected-survival.h"
 
+using namespace ghqCpp;
+
 ghq_data vecs_to_ghq_data(arma::vec const &weights, arma::vec const &nodes){
   if(nodes.size() != weights.size())
     throw std::invalid_argument("nodes.size() != weights.size()");

@@ -7,6 +7,8 @@
 #include <stdexcept>
 #include <psqn-bfgs.h>
 
+namespace ghqCpp {
+
 /**
  * virtual base class for a Gauss-Hermite quadrature problem. It specifies
  * the dimension of the random effects and the number of outputs. The integral
@@ -262,5 +264,7 @@ public:
     (double * __restrict__ res, double const *out, double const integral,
      arma::mat const &Sigma) const;
 };
+
+} // namespace ghqCpp
 
 #endif

@@ -1,6 +1,8 @@
 #include "integrand-expected-survival.h"
 #include "ghq-lp-utils.h"
 
+namespace ghqCpp {
+
 template<bool comp_grad>
 expected_survival_term<comp_grad>::expected_survival_term
   (arma::vec const &eta, arma::vec const &weights, arma::mat const &M,
@@ -177,3 +179,5 @@ void expected_survival_term<comp_grad>::log_integrand_hess
 
 template class expected_survival_term<false>;
 template class expected_survival_term<true>;
+
+} // namespace ghqCpp

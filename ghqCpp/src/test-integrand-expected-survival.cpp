@@ -2,6 +2,8 @@
 #include "integrand-expected-survival.h"
 #include <iterator>
 
+using namespace ghqCpp;
+
 // the test data
 namespace {
 arma::vec const etas{-0.6381, -0.6343, -0.6285, -0.6227, -0.6193, -0.6212, -0.6313, -0.6515, -0.6827, -0.724, -0.7723, -0.8229, -0.8699, -0.9073, -0.93},
