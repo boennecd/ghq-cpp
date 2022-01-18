@@ -135,7 +135,7 @@ context("expected_survival_term works as expected") {
       combined_problem prob(prob_dat);
       adaptive_problem prob_adap(prob, mem);
 
-      auto res = ghq(dat, prob, mem);
+      auto res = ghq(dat, prob_adap, mem);
 
       // handle the derivatives w.r.t. Sigma
       size_t const fixef_shift{surv_term.n_out()};
@@ -151,7 +151,7 @@ context("expected_survival_term works as expected") {
       expect_true(std::abs(out[0] - true_fn) < eps_fn);
       for(size_t i = 0; i < n_grad; ++i)
         expect_true
-          (std::abs(out[i + 1] - true_gr[i]) < 1e-3 * std::abs(true_gr[i]));
+          (std::abs(out[i + 1] - true_gr[i]) < 1e-4 * std::abs(true_gr[i]));
     }
   }
 }

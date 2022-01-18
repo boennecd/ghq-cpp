@@ -681,10 +681,10 @@ public:
 /**
  * computes the expected survival. That is 
  * 
- *   E(exp(-sum w_i[i] * exp(eta[i] + M.U)))
+ *   E(exp(-sum w_i[i] * exp(eta[i] + (M.U)[i])))
  *   
- * given n weights and offsets w and eta and a matrix M x R. U is assumed to be 
- * a R dimensional random variable which is ~ N(0, Sigma).
+ * given n weights and offsets w and eta and a matrix M of dimension n x R. U is 
+ * assumed to be a R dimensional random variable which is ~ N(0, Sigma).
  * 
  * The derivatives are computed w.r.t. the vector eta and the matrix M
  */
