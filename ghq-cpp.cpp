@@ -686,15 +686,17 @@ public:
  * given n weights and offsets w and eta and a matrix M x R. U is assumed to be 
  * a R dimensional random variable which is ~ N(0, Sigma).
  * 
- * TODO: something about the derivatives.
+ * The derivatives are computed w.r.t. the vector eta and the matrix M
  */
 template<bool comp_grad = false>
 class expected_survival_term final : public ghq_problem {
   arma::vec const &eta, &weights;
-  arma::mat const M_Sigma_chol_t;
+  arma::mat const Sigma_chol, M_Sigma_chol_t;
   
   size_t const v_n_vars = M_Sigma_chol_t.n_cols, 
-               v_n_out{comp_grad ? 1 : 1};
+               v_n_out
+    {comp_grad ? 1  + eta.n_elem + M_Sigma_chol_t.n_rows * M_Sigma_chol_t.n_cols
+               : 1};
   
 public:
   expected_survival_term
@@ -1470,7 +1472,8 @@ template<bool comp_grad>
 expected_survival_term<comp_grad>::expected_survival_term
   (arma::vec const &eta, arma::vec const &weights, arma::mat const &M, 
    arma::mat const &Sigma):
-  eta{eta}, weights{weights}, M_Sigma_chol_t{M * arma::chol(Sigma).t()} {
+  eta{eta}, weights{weights}, Sigma_chol(arma::chol(Sigma)), 
+  M_Sigma_chol_t{M * Sigma_chol.t()} {
     if(eta.n_elem != weights.n_elem)
       throw std::invalid_argument("eta.n_elem != weights.n_elem");
     else if(eta.n_elem != M_Sigma_chol_t.n_rows)
@@ -1498,16 +1501,66 @@ void expected_survival_term<comp_grad>::eval
           lps[i + j * n_lps] += m[i + k * n_lps] * points[j + k * n_points];
   }
   
-  // compute the weighted sum
-  for(size_t j = 0; j < n_points; ++j){
-    outs[j] = 0;
-    for(size_t i = 0; i < n_lps; ++i)
-      outs[j] -= weights[i] * std::exp(lps[i + j * n_lps]);
-    
-    outs[j] = std::exp(outs[j]);
-  }
+  for(size_t ij = 0; ij < n_points * n_lps; ++ij)
+    lps[ij] = std::exp(lps[ij]);
   
-  // TODO: implement the gradient
+  if constexpr(comp_grad){
+    double * const __restrict__ d_lps
+      {mem.get(n_lps * n_points + n_points * n_vars())};
+    double * const __restrict__ us{d_lps + n_lps * n_points};
+    
+    // compute parts of the derivatives w.r.t. each linear predictor
+    for(size_t j = 0; j < n_points; ++j)
+      for(size_t i = 0; i < n_lps; ++i)
+        d_lps[i + j * n_lps] = -weights[i] * lps[i + j * n_lps];
+    
+    // compute the weighted sum
+    std::fill(outs, outs + n_points, 0);
+    for(size_t j = 0; j < n_points; ++j)
+      for(size_t i = 0; i < n_lps; ++i)
+        outs[j] += d_lps[i + j * n_lps];
+    for(size_t j = 0; j < n_points; ++j)  
+      outs[j] = std::exp(outs[j]);
+    
+    // finish the computation of the derivatives w.r.t. each linear predictor
+    for(size_t j = 0; j < n_points; ++j)
+      for(size_t i = 0; i < n_lps; ++i)
+        d_lps[i + j * n_lps] *= outs[j];
+    
+    // fill in the derivatives w.r.t. eta
+    outs += n_points;
+    for(size_t j = 0; j < n_points; ++j)
+      for(size_t i = 0; i < n_lps; ++i)
+        outs[j + i * n_points] = d_lps[i + j * n_lps];
+    
+    // compute the derivatives w.r.t. M
+    outs += n_points * n_lps;
+    
+    std::copy(points, points + n_points * n_vars(), us);
+    {
+      int const m = n_points, n = n_vars();
+      constexpr double const alpha{1};
+      constexpr char const c_R{'R'}, c_U{'U'}, c_N{'N'};
+      F77_CALL(dtrmm)
+        (&c_R, &c_U, &c_N, &c_N, &m, &n, &alpha, Sigma_chol.memptr(), &n, 
+         us, &m, 1, 1, 1, 1);
+    }
+    
+    for(size_t k = 0; k < n_vars(); ++k)
+      for(size_t i = 0; i < n_lps; ++i)
+        for(size_t j = 0; j < n_points; ++j)
+          outs[j + i * n_points + k * n_points * n_lps] = 
+            d_lps[i + j * n_lps] * us[j + k * n_points];
+    
+  } else {
+    // compute the weighted sum
+    std::fill(outs, outs + n_points, 0);
+    for(size_t j = 0; j < n_points; ++j)
+      for(size_t i = 0; i < n_lps; ++i)
+        outs[j] -= weights[i] * lps[i + j * n_lps];
+    for(size_t j = 0; j < n_points; ++j)  
+      outs[j] = std::exp(outs[j]);
+  }
 }
 
 // TODO: test
@@ -1727,7 +1780,6 @@ double mixed_mult_logit_n_probit
   return res[0];
 }
 
-/// to test the member functions for the adaptive method
 // [[Rcpp::export(rng = false)]]
 Rcpp::NumericVector mixed_mult_logit_n_probit_grad
   (arma::mat const &eta, arma::mat const &Sigma, 
@@ -1798,6 +1850,47 @@ double expected_survival_term_to_R
     }
     
   return res[0];
+}
+
+// [[Rcpp::export(rng = false)]]
+Rcpp::NumericVector expected_survival_term_grad
+  (arma::vec const &eta, arma::vec const &ws, 
+   arma::mat const &M, arma::mat const &Sigma, arma::vec const &weights, 
+   arma::vec const &nodes, size_t const target_size = 128, 
+   size_t const n_rep = 1, bool const use_adaptive = false){
+  simple_mem_stack<double> mem;
+  expected_survival_term<true> surv_term(eta, ws, M, Sigma);
+  outer_prod_problem outer_term(Sigma.n_cols);
+  
+  std::vector<ghq_problem const *> const prob_dat
+    { &surv_term, &outer_term };
+  combined_problem prob(prob_dat);
+  
+  auto ghq_data_pass = vecs_to_ghq_data(weights, nodes);
+  
+  std::vector<double> res;  
+  if(use_adaptive){
+    adaptive_problem prob_adap(prob, mem);
+    
+    for(size_t i = 0; i < n_rep; ++i){
+      mem.reset();
+      res = ghq(ghq_data_pass, prob_adap, mem, target_size);
+    }
+    
+  } else 
+    for(size_t i = 0; i < n_rep; ++i){
+      mem.reset();
+      res = ghq(ghq_data_pass, prob, mem, target_size);
+    }
+    
+  // handle the derivatives w.r.t. Sigma
+  size_t const fixef_shift{surv_term.n_out()};
+  Rcpp::NumericVector out(fixef_shift + Sigma.n_cols * Sigma.n_cols);
+  std::copy(res.begin(), res.begin() + fixef_shift, &out[0]);
+  outer_term.d_Sig
+    (&out[fixef_shift], res.data() + fixef_shift, res[0], Sigma);
+  
+  return out;
 }
 
 /// to test the member functions for the adaptive method
@@ -2267,6 +2360,52 @@ bench::mark(
   `GHQ1 adaptive` = do_comp(
     target_size = n_points, use_adaptive = TRUE, n_rep = 1000L),
   `GHQ5 adaptive` = do_comp(
+    target_size = n_points^5, use_adaptive = TRUE ,n_rep = 1000L),
+  check = FALSE)
+
+# compute the gradient numerically
+num_grad <- numDeriv::grad(
+  \(par){
+    e <- par[seq_along(etas)]
+    par <- par[-seq_along(etas)]
+    M <- par[seq_along(M)] |> matrix(nrow = NROW(M))
+    par <- par[-seq_along(M)]
+    
+    S <- matrix(nrow = NROW(V), ncol = NCOL(V))
+    S[upper.tri(S, TRUE)] <- par
+    S[lower.tri(S)] <- t(S)[lower.tri(S)]
+    
+    expected_survival_term(
+      eta = e, ws = ws, M = M, Sigma = S,
+      weights = ghq_dat$w, nodes = ghq_dat$x, target_size = n_points, 
+      n_rep = 1, use_adaptive = TRUE)
+  }, c(etas, M, V[upper.tri(V, TRUE)]))
+
+# use the C++ implementation
+do_comp_grad <- \(target_size, n_rep = 1L, use_adaptive = FALSE){
+  res <- expected_survival_term_grad(
+    eta = etas, ws = ws, M = M, Sigma = V,
+    weights = ghq_dat$w, nodes = ghq_dat$x, target_size = target_size,
+    n_rep = n_rep, use_adaptive = use_adaptive)
+  
+  d_Sig <- tail(res, NCOL(V)^2) |> matrix(nrow = NCOL(V))
+  d_Sig[upper.tri(d_Sig)] <- 2 * d_Sig[upper.tri(d_Sig)]
+  c(head(res, -NCOL(V)^2), d_Sig[upper.tri(V, TRUE)])
+}
+
+est <- do_comp_grad(n_points, use_adaptive = TRUE)
+all.equal(brute_est, est[1])
+all.equal(num_grad, est[-1])
+
+# check the computation time of 1000 evaluations
+bench::mark(
+  GHQ1 = do_comp_grad(
+    target_size = n_points, use_adaptive = FALSE, n_rep = 1000L),
+  GHQ5 = do_comp_grad(
+    target_size = n_points^5, use_adaptive = FALSE ,n_rep = 1000L),
+  `GHQ1 adaptive` = do_comp_grad(
+    target_size = n_points, use_adaptive = TRUE, n_rep = 1000L),
+  `GHQ5 adaptive` = do_comp_grad(
     target_size = n_points^5, use_adaptive = TRUE ,n_rep = 1000L),
   check = FALSE)
 */
