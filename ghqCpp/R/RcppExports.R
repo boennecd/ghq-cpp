@@ -2,7 +2,23 @@
 # Generator token: 10BE3573-1514-4C36-9D1C-5A225CD40393
 
 #' @export
-expected_survival_term <- function(eta, ws, M, Sigma, weights, nodes, target_size = 128L, n_rep = 1L, use_adaptive = TRUE) {
-    .Call(`_ghqCpp_expected_survival_term_to_R`, eta, ws, M, Sigma, weights, nodes, target_size, n_rep, use_adaptive)
+expected_survival_term <- function(eta, ws, M, Sigma, weights, nodes, target_size = 128L, use_adaptive = TRUE) {
+    .Call(`_ghqCpp_expected_survival_term_to_R`, eta, ws, M, Sigma, weights, nodes, target_size, use_adaptive)
+}
+
+#' @export
+mixed_mult_logit_term <- function(eta, Sigma, which_category, weights, nodes, target_size = 128L, use_adaptive = TRUE) {
+    .Call(`_ghqCpp_mixed_mult_logit_term_to_R`, eta, Sigma, which_category, weights, nodes, target_size, use_adaptive)
+}
+
+#' Computes the Gradient
+#'
+#' @description
+#' Computes the gradient of the expectation of the multinomial logit factors
+#' with respect to the offsets on the linear predictor scale.
+#'
+#' @export
+mixed_mult_logit_term_grad <- function(eta, Sigma, which_category, weights, nodes, target_size = 128L, use_adaptive = TRUE) {
+    .Call(`_ghqCpp_mixed_mult_logit_term_grad`, eta, Sigma, which_category, weights, nodes, target_size, use_adaptive)
 }
 

@@ -128,32 +128,31 @@ context("expected_survival_term works as expected") {
       expect_true(res.size() == 1);
       expect_true(std::abs(res[0] - true_fn) < eps_fn);
     }
-    {
-      expected_survival_term<true> surv_term(etas, ws, M, V);
-      outer_prod_problem outer_term(V.n_cols);
 
-      std::vector<ghq_problem const *> const prob_dat
-          { &surv_term, &outer_term };
-      combined_problem prob(prob_dat);
-      adaptive_problem prob_adap(prob, mem);
+    expected_survival_term<true> surv_term(etas, ws, M, V);
+    outer_prod_problem outer_term(V.n_cols);
 
-      auto res = ghq(dat, prob_adap, mem);
+    std::vector<ghq_problem const *> const prob_dat
+        { &surv_term, &outer_term };
+    combined_problem prob(prob_dat);
+    adaptive_problem prob_adap(prob, mem);
 
-      // handle the derivatives w.r.t. Sigma
-      size_t const fixef_shift{surv_term.n_out()};
-      std::vector<double> out(fixef_shift + V.n_cols * V.n_cols);
-      std::copy(res.begin(), res.begin() + fixef_shift, &out[0]);
-      outer_term.d_Sig
-        (&out[fixef_shift], res.data() + fixef_shift, res[0], V);
+    auto res = ghq(dat, prob_adap, mem);
 
-      size_t const n_grad =
-        std::distance(std::begin(true_gr), std::end(true_gr));
-      expect_true(out.size() == 1 + n_grad);
+    // handle the derivatives w.r.t. Sigma
+    size_t const fixef_shift{surv_term.n_out()};
+    std::vector<double> out(fixef_shift + V.n_cols * V.n_cols);
+    std::copy(res.begin(), res.begin() + fixef_shift, &out[0]);
+    outer_term.d_Sig
+      (&out[fixef_shift], res.data() + fixef_shift, res[0], V);
 
-      expect_true(std::abs(out[0] - true_fn) < eps_fn);
-      for(size_t i = 0; i < n_grad; ++i)
-        expect_true
-          (std::abs(out[i + 1] - true_gr[i]) < 1e-4 * std::abs(true_gr[i]));
-    }
+    size_t const n_grad =
+      std::distance(std::begin(true_gr), std::end(true_gr));
+    expect_true(out.size() == 1 + n_grad);
+
+    expect_true(std::abs(out[0] - true_fn) < eps_fn);
+    for(size_t i = 0; i < n_grad; ++i)
+      expect_true
+        (std::abs(out[i + 1] - true_gr[i]) < 1e-4 * std::abs(true_gr[i]));
   }
 }

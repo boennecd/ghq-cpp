@@ -131,7 +131,10 @@ public:
                 double       * __restrict__ gr);
   };
 
-  adaptive_problem(ghq_problem const &problem, simple_mem_stack<double> &mem);
+  adaptive_problem
+    (ghq_problem const &problem, simple_mem_stack<double> &mem,
+     double const rel_eps = 1e-6, PSQN::psqn_uint const max_it = 1000L,
+     double const c1 = .0001, double const c2 = .9, double const gr_tol = -1);
 
   size_t n_vars() const { return v_n_vars; }
   size_t n_out() const { return v_n_out; }

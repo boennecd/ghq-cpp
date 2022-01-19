@@ -32,17 +32,18 @@ double adaptive_problem::mode_problem::grad
 }
 
 adaptive_problem::adaptive_problem
-  (ghq_problem const &problem, simple_mem_stack<double> &mem):
+  (ghq_problem const &problem, simple_mem_stack<double> &mem,
+   double const rel_eps, PSQN::psqn_uint const max_it, double const c1,
+   double const c2, double const gr_tol):
   problem{problem} {
     // attempt to find the mode
     mode_problem my_mode_problem(problem, mem);
     mu.zeros(n_vars());
 
-    // TODO: let the caller set the thresholds etc.
     // TODO: I can avoid the allocation in PSQN::bfgs with minor changes in the
     //       package
     auto res = PSQN::bfgs
-      (my_mode_problem, mu.memptr(), 1e-4, 1000L, 1e-4, .9, 0L, -1);
+      (my_mode_problem, mu.memptr(), rel_eps, max_it, c1, c2, 0L, gr_tol);
 
     bool succeeded = res.info == PSQN::info_code::converged;
     if(succeeded){
