@@ -29,7 +29,7 @@ class simple_mem_stack {
 #ifdef DEBUG_SIMPLE_MEM_STACK
   class block_container {
     size_t const n_ele;
-    std::unique_ptr<double[]> mem{new double[n_ele]};
+    std::unique_ptr<T[]> mem{new T[n_ele]};
 
   public:
     using iterator = T*;
@@ -38,7 +38,7 @@ class simple_mem_stack {
     block_container(size_t const n_ele): n_ele{n_ele} { }
     block_container(const block_container &o):
       n_ele{o.n_ele},
-      mem{new double[n_ele]} {
+      mem{new T[n_ele]} {
         std::copy(o.begin(), o.end(), begin());
       }
 
