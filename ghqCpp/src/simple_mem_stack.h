@@ -181,6 +181,15 @@ public:
     clear();
   }
 
+  /// pointers etc. are invalided on copy so there is no point in doing any work
+  /// here (i.e. allocating any memory that is not used yet)
+  simple_mem_stack(const simple_mem_stack&) {
+    clear();
+  }
+  /// nothing is invalidated so this fine. Move over all the memory and keep
+  /// the current head as is
+  simple_mem_stack(simple_mem_stack &&o) = default;
+
   /// clears the object deallocating all memory
   void clear(){
     while(!marks.empty())
