@@ -197,7 +197,7 @@ double pbvn(double const *mu, double const *Sigma){
  * the derivatives w.r.t. Sigma are stored as a 2 x 2 matrix ignoring the
  * symmetry. Thus, a 6D array needs to be passed for the gradient.
  */
-template<int method = 1>
+template<int method = 1, bool comp_d_Sig = true>
 double pbvn_grad(double const *mu, double const *Sigma, double *grad){
   static_assert(method == 1 || method == 0, "method is not implemented");
   std::array<double, 3> Sig_chol;
@@ -231,9 +231,9 @@ double pbvn_grad(double const *mu, double const *Sigma, double *grad){
 
   // do the computation
   double out{};
-  std::fill(grad, grad + 6, 0);
+  std::fill(grad, comp_d_Sig ? grad + 6 : grad + 2, 0);
   double * const d_mu{grad},
-         * const d_Sig{grad + 2};
+         * const d_Sig{comp_d_Sig ? grad + 2 : nullptr};
   double const p_outer{Rf_pnorm5(ubs[0], 0, 1, 1, 0)};
 
   for(size_t i = 0; i < n_nodes; ++i){
@@ -249,12 +249,14 @@ double pbvn_grad(double const *mu, double const *Sigma, double *grad){
     grad[0] += weights[i] * g1_fac;
     grad[1] += weights[i] * trunc_mean_scaled;
 
-    d_Sig[0] += weights[i] * g1_fac * z_outer;
-    double const off_diag{z_outer * trunc_mean_scaled};
-    d_Sig[1] += weights[i] * off_diag;
-    double const trunc_sq_moment_scaled
-      {p_inner - dnorm_u_lim_inner * u_lim_inner};
-    d_Sig[3] += weights[i] * trunc_sq_moment_scaled;
+    if constexpr (comp_d_Sig){
+      d_Sig[0] += weights[i] * g1_fac * z_outer;
+      double const off_diag{z_outer * trunc_mean_scaled};
+      d_Sig[1] += weights[i] * off_diag;
+      double const trunc_sq_moment_scaled
+        {p_inner - dnorm_u_lim_inner * u_lim_inner};
+      d_Sig[3] += weights[i] * trunc_sq_moment_scaled;
+    }
   }
 
   if(method == 1)
@@ -262,14 +264,8 @@ double pbvn_grad(double const *mu, double const *Sigma, double *grad){
   else
     out *= p_outer;
 
-  d_Sig[2] = d_Sig[1]; // symmetry
+  // handle the derivatives w.r.t. mu
   std::for_each(d_mu, d_mu + 2, [&](double &x){ x *= p_outer; });
-  std::for_each(d_Sig, d_Sig + 4,
-                [&](double &x){ x *= p_outer / 2; });
-
-  // subtract the identity matrix in the diagonal
-  d_Sig[0] -= out / 2;
-  d_Sig[3] -= out / 2;
 
   // performs backward substitution
   auto back_sub = [&](double *x){
@@ -278,18 +274,43 @@ double pbvn_grad(double const *mu, double const *Sigma, double *grad){
   };
 
   back_sub(d_mu);
-  back_sub(d_Sig);
-  back_sub(d_Sig + 2);
-  std::swap(d_Sig[1], d_Sig[2]); // transpose
-  back_sub(d_Sig);
-  back_sub(d_Sig + 2);
+
+  // possibly handle the derivatives w.r.t Sigma
+  if constexpr (comp_d_Sig){
+    d_Sig[2] = d_Sig[1]; // symmetry
+    std::for_each(d_Sig, d_Sig + 4,
+                  [&](double &x){ x *= p_outer / 2; });
+
+    // subtract the identity matrix in the diagonal
+    d_Sig[0] -= out / 2;
+    d_Sig[3] -= out / 2;
+
+    back_sub(d_Sig);
+    back_sub(d_Sig + 2);
+    std::swap(d_Sig[1], d_Sig[2]); // transpose
+    back_sub(d_Sig);
+    back_sub(d_Sig + 2);
+  }
 
   if(permuted){
     std::swap(grad[0], grad[1]); // d_mu
-    std::swap(grad[2], grad[5]); // d_Sigma
+    if constexpr (comp_d_Sig)
+      std::swap(grad[2], grad[5]); // d_Sigma
   }
 
   return out;
+}
+
+/// computes the Hessian w.r.t. mu. Thus, a 4D array has to be passed
+template<int method = 1>
+void pbvn_hess(double const *mu, double const *Sigma, double *hess){
+  double gr[6];
+  pbvn_grad<method, true>(mu, Sigma, gr);
+
+  arma::mat Sig(const_cast<double *>(Sigma), 2, 2, false);
+  for(unsigned j = 0; j < 2; ++j)
+    for(unsigned i = 0; i < 2; ++i)
+      hess[i + j * 2] = 2 * gr[i + j * 2 + 2];
 }
 
 } // namespace ghqCpp
