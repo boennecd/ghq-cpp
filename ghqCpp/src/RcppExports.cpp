@@ -60,6 +60,44 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// mixed_mult_logit_n_probit_term
+double mixed_mult_logit_n_probit_term(arma::mat const& eta, arma::uvec const& which_category, double const s, double const eta_probit, arma::mat const& Sigma, arma::vec const& z, arma::vec const& weights, arma::vec const& nodes, size_t const target_size, bool const use_adaptive);
+RcppExport SEXP _ghqCpp_mixed_mult_logit_n_probit_term(SEXP etaSEXP, SEXP which_categorySEXP, SEXP sSEXP, SEXP eta_probitSEXP, SEXP SigmaSEXP, SEXP zSEXP, SEXP weightsSEXP, SEXP nodesSEXP, SEXP target_sizeSEXP, SEXP use_adaptiveSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::traits::input_parameter< arma::mat const& >::type eta(etaSEXP);
+    Rcpp::traits::input_parameter< arma::uvec const& >::type which_category(which_categorySEXP);
+    Rcpp::traits::input_parameter< double const >::type s(sSEXP);
+    Rcpp::traits::input_parameter< double const >::type eta_probit(eta_probitSEXP);
+    Rcpp::traits::input_parameter< arma::mat const& >::type Sigma(SigmaSEXP);
+    Rcpp::traits::input_parameter< arma::vec const& >::type z(zSEXP);
+    Rcpp::traits::input_parameter< arma::vec const& >::type weights(weightsSEXP);
+    Rcpp::traits::input_parameter< arma::vec const& >::type nodes(nodesSEXP);
+    Rcpp::traits::input_parameter< size_t const >::type target_size(target_sizeSEXP);
+    Rcpp::traits::input_parameter< bool const >::type use_adaptive(use_adaptiveSEXP);
+    rcpp_result_gen = Rcpp::wrap(mixed_mult_logit_n_probit_term(eta, which_category, s, eta_probit, Sigma, z, weights, nodes, target_size, use_adaptive));
+    return rcpp_result_gen;
+END_RCPP
+}
+// mixed_mult_logit_n_cond_pbvn
+double mixed_mult_logit_n_cond_pbvn(arma::mat const& eta, arma::uvec const& which_category, arma::vec const& eta_pbvn, arma::mat const& Psi, arma::mat const& V, arma::mat const& Sigma, arma::vec const& weights, arma::vec const& nodes, size_t const target_size, bool const use_adaptive);
+RcppExport SEXP _ghqCpp_mixed_mult_logit_n_cond_pbvn(SEXP etaSEXP, SEXP which_categorySEXP, SEXP eta_pbvnSEXP, SEXP PsiSEXP, SEXP VSEXP, SEXP SigmaSEXP, SEXP weightsSEXP, SEXP nodesSEXP, SEXP target_sizeSEXP, SEXP use_adaptiveSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::traits::input_parameter< arma::mat const& >::type eta(etaSEXP);
+    Rcpp::traits::input_parameter< arma::uvec const& >::type which_category(which_categorySEXP);
+    Rcpp::traits::input_parameter< arma::vec const& >::type eta_pbvn(eta_pbvnSEXP);
+    Rcpp::traits::input_parameter< arma::mat const& >::type Psi(PsiSEXP);
+    Rcpp::traits::input_parameter< arma::mat const& >::type V(VSEXP);
+    Rcpp::traits::input_parameter< arma::mat const& >::type Sigma(SigmaSEXP);
+    Rcpp::traits::input_parameter< arma::vec const& >::type weights(weightsSEXP);
+    Rcpp::traits::input_parameter< arma::vec const& >::type nodes(nodesSEXP);
+    Rcpp::traits::input_parameter< size_t const >::type target_size(target_sizeSEXP);
+    Rcpp::traits::input_parameter< bool const >::type use_adaptive(use_adaptiveSEXP);
+    rcpp_result_gen = Rcpp::wrap(mixed_mult_logit_n_cond_pbvn(eta, which_category, eta_pbvn, Psi, V, Sigma, weights, nodes, target_size, use_adaptive));
+    return rcpp_result_gen;
+END_RCPP
+}
 
 RcppExport SEXP run_testthat_tests(SEXP);
 
@@ -67,6 +105,8 @@ static const R_CallMethodDef CallEntries[] = {
     {"_ghqCpp_expected_survival_term_to_R", (DL_FUNC) &_ghqCpp_expected_survival_term_to_R, 8},
     {"_ghqCpp_mixed_mult_logit_term_to_R", (DL_FUNC) &_ghqCpp_mixed_mult_logit_term_to_R, 7},
     {"_ghqCpp_mixed_mult_logit_term_grad", (DL_FUNC) &_ghqCpp_mixed_mult_logit_term_grad, 7},
+    {"_ghqCpp_mixed_mult_logit_n_probit_term", (DL_FUNC) &_ghqCpp_mixed_mult_logit_n_probit_term, 10},
+    {"_ghqCpp_mixed_mult_logit_n_cond_pbvn", (DL_FUNC) &_ghqCpp_mixed_mult_logit_n_cond_pbvn, 10},
     {"run_testthat_tests", (DL_FUNC) &run_testthat_tests, 1},
     {NULL, NULL, 0}
 };

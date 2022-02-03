@@ -1,5 +1,7 @@
 #include "integrand-expected-survival.h"
 #include "integrand-mixed-mult-logit-term.h"
+#include "integrand-probit-term.h"
+#include "integrand-cond-pbvn.h"
 
 using namespace ghqCpp;
 
@@ -91,4 +93,58 @@ Rcpp::NumericVector mixed_mult_logit_term_grad
   out.attr("Value") = res[0];
 
   return out;
+}
+
+//' @export
+// [[Rcpp::export(rng = false)]]
+double mixed_mult_logit_n_probit_term
+  (arma::mat const &eta,
+   arma::uvec const &which_category, double const s, double const eta_probit,
+   arma::mat const &Sigma, arma::vec const &z, arma::vec const &weights,
+   arma::vec const &nodes, size_t const target_size = 128,
+   bool const use_adaptive = true){
+  R_mem.reset();
+
+  mixed_mult_logit_term<false> logit(eta, Sigma, which_category);
+  mixed_probit_term<false> probit(s, eta_probit, Sigma, z);
+  combined_problem prob_comb({&logit, &probit});
+
+  auto ghq_data_pass = vecs_to_ghq_data(weights, nodes);
+
+  std::vector<double> res;
+  if(use_adaptive){
+    adaptive_problem prob_adap(prob_comb, R_mem);
+    res = ghq(ghq_data_pass, prob_adap, R_mem, target_size);
+
+  } else
+    res = ghq(ghq_data_pass, prob_comb, R_mem, target_size);
+
+  return res[0];
+}
+
+//' @export
+// [[Rcpp::export(rng = false)]]
+double mixed_mult_logit_n_cond_pbvn
+  (arma::mat const &eta,
+   arma::uvec const &which_category,  arma::vec const &eta_pbvn,
+   arma::mat const &Psi, arma::mat const &V, arma::mat const &Sigma,
+   arma::vec const &weights, arma::vec const &nodes,
+   size_t const target_size = 128, bool const use_adaptive = true){
+  R_mem.reset();
+
+  mixed_mult_logit_term<false> logit(eta, Sigma, which_category);
+  cond_pbvn<false> prob_pbvn(eta_pbvn, Psi, V, Sigma);
+  combined_problem prob_comb({&logit, &prob_pbvn});
+
+  auto ghq_data_pass = vecs_to_ghq_data(weights, nodes);
+
+  std::vector<double> res;
+  if(use_adaptive){
+    adaptive_problem prob_adap(prob_comb, R_mem);
+    res = ghq(ghq_data_pass, prob_adap, R_mem, target_size);
+
+  } else
+    res = ghq(ghq_data_pass, prob_comb, R_mem, target_size);
+
+  return res[0];
 }

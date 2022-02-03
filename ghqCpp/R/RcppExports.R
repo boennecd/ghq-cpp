@@ -22,3 +22,13 @@ mixed_mult_logit_term_grad <- function(eta, Sigma, which_category, weights, node
     .Call(`_ghqCpp_mixed_mult_logit_term_grad`, eta, Sigma, which_category, weights, nodes, target_size, use_adaptive)
 }
 
+#' @export
+mixed_mult_logit_n_probit_term <- function(eta, which_category, s, eta_probit, Sigma, z, weights, nodes, target_size = 128L, use_adaptive = TRUE) {
+    .Call(`_ghqCpp_mixed_mult_logit_n_probit_term`, eta, which_category, s, eta_probit, Sigma, z, weights, nodes, target_size, use_adaptive)
+}
+
+#' @export
+mixed_mult_logit_n_cond_pbvn <- function(eta, which_category, eta_pbvn, Psi, V, Sigma, weights, nodes, target_size = 128L, use_adaptive = TRUE) {
+    .Call(`_ghqCpp_mixed_mult_logit_n_cond_pbvn`, eta, which_category, eta_pbvn, Psi, V, Sigma, weights, nodes, target_size, use_adaptive)
+}
+
