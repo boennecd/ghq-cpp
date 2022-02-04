@@ -17,7 +17,12 @@ namespace ghqCpp {
  *   int phi(x)g(x)dx
  *
  * where phi(x) is a given dimensional standard multivariate normal
- * distribution. The class also computes g(x).
+ * distribution. The class also computes g(x). The integrals can be extended 
+ * to 
+ *
+ *   int phi(x; mu, Sigma)g(x) dx
+ * 
+ * with the rescale_problem and rescale_shift_problem classes.
  *
  * To perform adaptive Gauss-Hermite quadrature for one of the elements of g,
  * say g_i, the class also has member functions to compute log g_i(x), the
