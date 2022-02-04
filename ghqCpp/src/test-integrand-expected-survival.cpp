@@ -57,7 +57,7 @@ context("expected_survival_term works as expected") {
 
     simple_mem_stack<double> mem;
     expected_survival_term surv_term(etas, ws, M);
-    rescaled_problem prob(V, surv_term);
+    rescale_problem prob(V, surv_term);
 
     expect_true
       (std::abs(prob.log_integrand(point, mem) - true_func) <
@@ -123,7 +123,7 @@ context("expected_survival_term works as expected") {
 
     {
       expected_survival_term<false> surv_term(etas, ws, M);
-      rescaled_problem<false> prob(V, surv_term);
+      rescale_problem<false> prob(V, surv_term);
       adaptive_problem prob_adap(prob, mem);
 
       auto res = ghq(dat, prob, mem);
@@ -132,7 +132,7 @@ context("expected_survival_term works as expected") {
     }
 
     expected_survival_term<true> surv_term(etas, ws, M);
-    rescaled_problem<true> prob(V, surv_term);
+    rescale_problem<true> prob(V, surv_term);
     adaptive_problem prob_adap(prob, mem);
 
     auto res = ghq(dat, prob_adap, mem);

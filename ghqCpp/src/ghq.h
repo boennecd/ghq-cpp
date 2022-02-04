@@ -237,14 +237,14 @@ public:
  *
  * so we need to compute
  *
- *   int x.x^T phi(x)h(x)dx
+ *   int x.x^T phi(x)g(C.x)dx
  *
  * Thus, this is stored as the last elements and the final derivatives can be
  * computed with the post_process member function. Only the upper triangle is
  * stored during the quadrature.
  */
 template<bool comp_grad = false>
-class rescaled_problem final : public ghq_problem  {
+class rescale_problem final : public ghq_problem  {
   arma::mat const Sigma_chol;
   ghq_problem const &inner_problem;
 
@@ -256,7 +256,7 @@ class rescaled_problem final : public ghq_problem  {
   double * rescale(double const *point, simple_mem_stack<double> &mem) const;
 
 public:
-  rescaled_problem(arma::mat const &Sigma, ghq_problem const &inner_problem);
+  rescale_problem(arma::mat const &Sigma, ghq_problem const &inner_problem);
 
   size_t n_vars() const { return v_n_vars; }
   size_t n_out() const { return v_n_out; }
@@ -280,9 +280,57 @@ public:
    * computes the derivatives w.r.t. Sigma given the final output and the value of
    * the entire integral.
    */
-  void post_process
-    (double * __restrict__ res, double const integral)
-    const;
+  void post_process(double * __restrict__ res, double const integral) const;
+};
+
+/**
+ * Like rescale_problem but for
+ *
+ *   A = int phi(x; m, Sigma)g(x) dx = int phi(x)g(C.x + m) dx
+ *
+ * The derivatives are w.r.t. Sigma and m. The derivatives for m are first.
+ * This requires that we compute
+ *
+ *   int x phi(x)g(C.x + m)dx
+ */
+template<bool comp_grad = false>
+class rescale_shift_problem final : public ghq_problem  {
+  arma::vec const &m;
+  arma::mat const Sigma_chol;
+  ghq_problem const &inner_problem;
+
+  size_t const v_n_vars = Sigma_chol.n_cols,
+    n_out_inner{inner_problem.n_out()},
+    v_n_out{comp_grad ? n_out_inner + v_n_vars * (v_n_vars + 1)
+                      : n_out_inner};
+
+  double * rescale_center
+    (double const *point, simple_mem_stack<double> &mem) const;
+
+public:
+  rescale_shift_problem
+    (arma::mat const &Sigma, arma::vec const &m,
+     ghq_problem const &inner_problem);
+
+  size_t n_vars() const { return v_n_vars; }
+  size_t n_out() const { return v_n_out; }
+
+  void eval
+    (double const *points, size_t const n_points, double * __restrict__ outs,
+     simple_mem_stack<double> &mem) const;
+
+  double log_integrand
+    (double const *point, simple_mem_stack<double> &mem) const;
+
+  double log_integrand_grad
+    (double const *point, double * __restrict__ grad,
+     simple_mem_stack<double> &mem) const;
+
+  void log_integrand_hess
+    (double const *point, double *hess,
+     simple_mem_stack<double> &mem) const;
+
+  void post_process(double * __restrict__ res, double const integral) const;
 };
 
 } // namespace ghqCpp

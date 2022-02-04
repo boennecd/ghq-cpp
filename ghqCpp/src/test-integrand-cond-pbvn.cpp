@@ -56,7 +56,7 @@ context("cond_pbvn works as expected") {
 
     simple_mem_stack<double> mem;
     cond_pbvn<false> pbvn_term(eta, Psi, V);
-    rescaled_problem<false> prob(Sigma, pbvn_term);
+    rescale_problem<false> prob(Sigma, pbvn_term);
     {
       double const res{prob.log_integrand(point, mem)};
       expect_true(std::abs(res - true_fn) < std::abs(true_fn) * 1e-8);
@@ -101,7 +101,7 @@ context("cond_pbvn works as expected") {
 
     {
       cond_pbvn<false> pbvn_term(eta, Psi, V);
-      rescaled_problem<false> prop(Sigma, pbvn_term);
+      rescale_problem<false> prop(Sigma, pbvn_term);
 
       adaptive_problem prob(prop, mem);
       auto res = ghq(dat, prob, mem);
@@ -111,7 +111,7 @@ context("cond_pbvn works as expected") {
 
     // test the gradient
     cond_pbvn<true> pbvn_term(eta, Psi, V);
-    rescaled_problem<false> prop(Sigma, pbvn_term);
+    rescale_problem<false> prop(Sigma, pbvn_term);
     adaptive_problem prob(prop, mem);
     auto res = ghq(dat, prob, mem);
     expect_true(res.size() == 7 + 2 * K);

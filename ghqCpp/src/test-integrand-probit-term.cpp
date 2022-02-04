@@ -48,7 +48,7 @@ context("mixed_probit_term works as expected") {
 
     simple_mem_stack<double> mem;
     mixed_probit_term probit_prob(s, eta, z);
-    rescaled_problem prob_rescaled(Sigma, probit_prob);
+    rescale_problem prob_rescaled(Sigma, probit_prob);
 
     {
       double const res{prob_rescaled.log_integrand(point, mem)};
@@ -92,7 +92,7 @@ context("mixed_probit_term works as expected") {
 
     {
       mixed_probit_term<false> probit_prob(s, eta, z);
-      rescaled_problem<false> prob_recaled(Sigma, probit_prob);
+      rescale_problem<false> prob_recaled(Sigma, probit_prob);
       adaptive_problem prob(prob_recaled, mem);
 
       auto res = ghq(dat, prob, mem);
@@ -101,7 +101,7 @@ context("mixed_probit_term works as expected") {
     }
 
     mixed_probit_term<true> probit_prob(s, eta, z);
-    rescaled_problem<false> prob_recaled(Sigma, probit_prob);
+    rescale_problem<false> prob_recaled(Sigma, probit_prob);
     adaptive_problem prob(prob_recaled, mem);
 
     auto res = ghq(dat, prob, mem);

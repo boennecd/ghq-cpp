@@ -22,7 +22,7 @@ double expected_survival_term_to_R
    bool const use_adaptive = true){
   R_mem.reset();
   expected_survival_term<false> surv_term(eta, ws, M);
-  rescaled_problem<false> prob(Sigma, surv_term);
+  rescale_problem<false> prob(Sigma, surv_term);
 
   auto ghq_data_pass = vecs_to_ghq_data(weights, nodes);
 
@@ -47,7 +47,7 @@ double mixed_mult_logit_term_to_R
   R_mem.reset();
 
   mixed_mult_logit_term<false> logit_term(eta, which_category);
-  rescaled_problem<false> prob(Sigma, logit_term);
+  rescale_problem<false> prob(Sigma, logit_term);
 
   auto ghq_data_pass = vecs_to_ghq_data(weights, nodes);
 
@@ -79,7 +79,7 @@ Rcpp::NumericVector mixed_mult_logit_term_grad
   R_mem.reset();
 
   mixed_mult_logit_term<true> logit_term(eta, which_category);
-  rescaled_problem<false> prob(Sigma, logit_term);
+  rescale_problem<false> prob(Sigma, logit_term);
 
   auto ghq_data_pass = vecs_to_ghq_data(weights, nodes);
 
@@ -111,7 +111,7 @@ double mixed_mult_logit_n_probit_term
   mixed_mult_logit_term<false> logit(eta, which_category);
   mixed_probit_term<false> probit(s, eta_probit, z);
   combined_problem prob_comb({&logit, &probit});
-  rescaled_problem<false> prob_scaled(Sigma, prob_comb);
+  rescale_problem<false> prob_scaled(Sigma, prob_comb);
 
   auto ghq_data_pass = vecs_to_ghq_data(weights, nodes);
 
@@ -139,7 +139,7 @@ double mixed_mult_logit_n_cond_pbvn
   mixed_mult_logit_term<false> logit(eta, which_category);
   cond_pbvn<false> prob_pbvn(eta_pbvn, Psi, V);
   combined_problem prob_comb({&logit, &prob_pbvn});
-  rescaled_problem<false> prob_scaled(Sigma, prob_comb);
+  rescale_problem<false> prob_scaled(Sigma, prob_comb);
 
   auto ghq_data_pass = vecs_to_ghq_data(weights, nodes);
 
