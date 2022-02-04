@@ -7,13 +7,8 @@ namespace ghqCpp {
 
 template<bool comp_grad>
 mixed_probit_term<comp_grad>::mixed_probit_term
-  (double const s, double const eta, arma::mat const &Sigma,
-   arma::vec const &z):
-  s{s}, eta{eta}, Sigma_chol{arma::chol(Sigma, "upper")},
-  Sigma_chol_z{Sigma_chol * z} {
-    if(z.n_elem != Sigma.n_cols)
-      throw std::invalid_argument("z.n_elem != Sigma_chol.n_cols");
-  }
+  (double const s, double const eta, arma::vec const &z):
+  s{s}, eta{eta}, z{z} { }
 
 template<bool comp_grad>
 void mixed_probit_term<comp_grad>::eval
@@ -24,7 +19,7 @@ void mixed_probit_term<comp_grad>::eval
   std::fill(lps, lps + n_points, eta);
   for(size_t j = 0; j < n_vars(); ++j)
     for(size_t i = 0; i < n_points; ++i)
-      lps[i] += points[i + j * n_points] * Sigma_chol_z[j];
+      lps[i] += points[i + j * n_points] * z[j];
 
   std::for_each(lps, lps + n_points, [&](double &x) { x /= s; });
 
@@ -43,21 +38,10 @@ void mixed_probit_term<comp_grad>::eval
     outs += 2 * n_points;
 
     // the derivatives w.r.t. z
-    double * const us{mem.get(n_points * n_vars())};
-    std::copy(points, points + n_points * n_vars(), us);
-    {
-      int const m = n_points, n = n_vars();
-      constexpr double const alpha{1};
-      constexpr char const c_R{'R'}, c_U{'U'}, c_N{'N'};
-      F77_CALL(dtrmm)
-        (&c_R, &c_U, &c_N, &c_N, &m, &n, &alpha, Sigma_chol.memptr(), &n,
-         us, &m, 1, 1, 1, 1);
-    }
-
-    double const *us_ij{us};
+    double const * point_ij{points};
     for(size_t j = 0; j < n_vars(); ++j)
-      for(size_t i = 0; i < n_points; ++i, ++outs, ++us_ij)
-        *outs = d_etas[i] * *us_ij;
+      for(size_t i = 0; i < n_points; ++i, ++outs, ++point_ij)
+        *outs = d_etas[i] * *point_ij;
   }
 }
 
@@ -66,7 +50,7 @@ double mixed_probit_term<comp_grad>::log_integrand
   (double const *point, simple_mem_stack<double> &mem) const {
   double lp{eta};
   for(size_t i = 0; i < n_vars(); ++i)
-    lp += point[i] * Sigma_chol_z[i];
+    lp += point[i] * z[i];
   lp /= s;
   return Rf_pnorm5(lp, 0, 1, 1, 1);
 }
@@ -77,14 +61,14 @@ double mixed_probit_term<comp_grad>::log_integrand_grad
    simple_mem_stack<double> &mem) const {
   double lp{eta};
   for(size_t i = 0; i < n_vars(); ++i)
-    lp += point[i] * Sigma_chol_z[i];
+    lp += point[i] * z[i];
   lp /= s;
   double const log_pnrm{Rf_pnorm5(lp, 0, 1, 1, 1)},
                log_dnrm{Rf_dnorm4(lp, 0, 1, 1)},
                d_lp{std::exp(log_dnrm - log_pnrm)};
 
   for(size_t i = 0; i < n_vars(); ++i)
-    grad[i] = Sigma_chol_z[i] * d_lp / s;
+    grad[i] = z[i] * d_lp / s;
 
   return log_pnrm;
 }
@@ -95,7 +79,7 @@ void mixed_probit_term<comp_grad>::log_integrand_hess
    simple_mem_stack<double> &mem) const {
   double lp{eta};
   for(size_t i = 0; i < n_vars(); ++i)
-    lp += point[i] * Sigma_chol_z[i];
+    lp += point[i] * z[i];
   lp /= s;
 
   double const log_pnrm{Rf_pnorm5(lp, 0, 1, 1, 1)},
@@ -105,7 +89,7 @@ void mixed_probit_term<comp_grad>::log_integrand_hess
 
   for(size_t j = 0; j < n_vars(); ++j)
     for(size_t i = 0; i < n_vars(); ++i)
-      hess[i + j * n_vars()] = Sigma_chol_z[i] * Sigma_chol_z[j] * d_lp_sq;
+      hess[i + j * n_vars()] = z[i] * z[j] * d_lp_sq;
 
   std::for_each(hess, hess + n_vars() * n_vars(),
                 [&](double &x){ x /= s * s; });

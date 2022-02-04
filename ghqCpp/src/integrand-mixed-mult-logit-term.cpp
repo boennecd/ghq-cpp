@@ -5,16 +5,10 @@ namespace ghqCpp {
 
 template<bool comp_grad>
 mixed_mult_logit_term<comp_grad>::mixed_mult_logit_term
-  (arma::mat const &eta, arma::mat const &Sigma,
-   arma::uvec const &which_category):
-  eta{eta}, Sigma_chol{arma::chol(Sigma, "upper")},
-  which_category{which_category} {
+  (arma::mat const &eta, arma::uvec const &which_category):
+  eta{eta}, which_category{which_category} {
   if(which_category.n_elem != eta.n_cols)
     throw std::invalid_argument("which_category.n_elem != eta.n_cols");
-  else if(Sigma.n_cols != Sigma.n_rows)
-    throw std::invalid_argument("Sigma.n_cols != Sigma.n_rows");
-  else if(Sigma.n_cols != eta.n_rows)
-    throw std::invalid_argument("Sigma.n_cols != eta.n_rows");
   for(arma::uword i : which_category)
     if(i > eta.n_rows)
       throw std::invalid_argument
@@ -25,19 +19,7 @@ template<bool comp_grad>
 void mixed_mult_logit_term<comp_grad>::eval
   (double const *points, size_t const n_points, double * __restrict__ outs,
    simple_mem_stack<double> &mem) const {
-  double * const __restrict__ us{mem.get(n_points * n_vars() + n_vars())},
-         * const __restrict__ us_j{us + n_points * n_vars()};
-
-  // do the matrix product points.chol(Sigma)
-  std::copy(points, points + n_points * n_vars(), us);
-  {
-    int const m = n_points, n = n_vars();
-    constexpr double const alpha{1};
-    constexpr char const c_R{'R'}, c_U{'U'}, c_N{'N'};
-    F77_CALL(dtrmm)
-      (&c_R, &c_U, &c_N, &c_N, &m, &n, &alpha, Sigma_chol.memptr(), &n,
-       us, &m, 1, 1, 1, 1);
-  }
+  double * const __restrict__ point{mem.get(n_vars())};
 
   if constexpr (comp_grad){
     double * const terms{mem.get(2 * eta.n_cols + eta.n_cols * eta.n_rows)},
@@ -48,7 +30,7 @@ void mixed_mult_logit_term<comp_grad>::eval
     for(size_t j = 0; j < n_points; ++j){
       // copy the random effect
       for(size_t i = 0; i < n_vars(); ++i)
-        us_j[i] = us[j + i * n_points];
+        point[i] = points[j + i * n_points];
 
       // compute the integrand
       outs[j] = 1;
@@ -57,7 +39,7 @@ void mixed_mult_logit_term<comp_grad>::eval
         denoms[k] = 1;
         double const * eta_k{eta.colptr(k)};
         for(size_t i = 0; i < n_vars(); ++i, ++eta_k){
-          lps[i + offset] = std::exp(*eta_k + us_j[i]);
+          lps[i + offset] = std::exp(*eta_k + point[i]);
           denoms[k] += lps[i + offset];
         }
 
@@ -85,14 +67,14 @@ void mixed_mult_logit_term<comp_grad>::eval
     for(size_t j = 0; j < n_points; ++j){
       // copy the random effect
       for(size_t i = 0; i < n_vars(); ++i)
-        us_j[i] = us[j + i * n_points];
+        point[i] = points[j + i * n_points];
 
       outs[j] = 1;
       for(arma::uword k = 0; k < eta.n_cols; ++k){
         double denom{1};
         double const * eta_k{eta.colptr(k)};
         for(size_t i = 0; i < n_vars(); ++i, ++eta_k){
-          lp[i] = std::exp(*eta_k + us_j[i]);
+          lp[i] = std::exp(*eta_k + point[i]);
           denom += lp[i];
         }
 
@@ -107,26 +89,14 @@ void mixed_mult_logit_term<comp_grad>::eval
 template<bool comp_grad>
 double mixed_mult_logit_term<comp_grad>::log_integrand
   (double const *point, simple_mem_stack<double> &mem) const {
-  double * const __restrict__ u{mem.get(2 * n_vars())},
-         * const __restrict__ lp{u + n_vars()};
-
-  // do the matrix product point.chol(Sigma)
-  std::copy(point, point + n_vars(), u);
-  {
-    int const m = 1, n = n_vars();
-    constexpr double const alpha{1};
-    constexpr char const c_R{'R'}, c_U{'U'}, c_N{'N'};
-    F77_CALL(dtrmm)
-      (&c_R, &c_U, &c_N, &c_N, &m, &n, &alpha, Sigma_chol.memptr(), &n,
-       u, &m, 1, 1, 1, 1);
-  }
+  double * const __restrict__ lp{mem.get(n_vars())};
 
   double out{};
   for(arma::uword k = 0; k < eta.n_cols; ++k){
     double denom{1};
     double const * eta_k{eta.colptr(k)};
     for(size_t i = 0; i < n_vars(); ++i, ++eta_k){
-      lp[i] = *eta_k + u[i];
+      lp[i] = *eta_k + point[i];
       denom += std::exp(lp[i]);
     }
 
@@ -143,19 +113,8 @@ template<bool comp_grad>
 double mixed_mult_logit_term<comp_grad>::log_integrand_grad
   (double const *point, double * __restrict__ grad,
    simple_mem_stack<double> &mem) const {
-  double * const __restrict__ u{mem.get(3 * n_vars())},
-         * const __restrict__ lp{u + n_vars()},
+  double * const __restrict__ lp{mem.get(2 * n_vars())},
          * const __restrict__ lp_exp{lp + n_vars()};
-
-  std::copy(point, point + n_vars(), u);
-  {
-    int const m = 1, n = n_vars();
-    constexpr double const alpha{1};
-    constexpr char const c_R{'R'}, c_U{'U'}, c_N{'N'};
-    F77_CALL(dtrmm)
-      (&c_R, &c_U, &c_N, &c_N, &m, &n, &alpha, Sigma_chol.memptr(), &n,
-       u, &m, 1, 1, 1, 1);
-  }
 
   double out{};
   std::fill(grad, grad + n_vars(), 0);
@@ -163,7 +122,7 @@ double mixed_mult_logit_term<comp_grad>::log_integrand_grad
     double denom{1};
     double const * eta_k{eta.colptr(k)};
     for(size_t i = 0; i < n_vars(); ++i, ++eta_k){
-      lp[i] = *eta_k + u[i];
+      lp[i] = *eta_k + point[i];
       lp_exp[i] = exp(lp[i]);
       denom += lp_exp[i];
     }
@@ -180,16 +139,6 @@ double mixed_mult_logit_term<comp_grad>::log_integrand_grad
     }
   }
 
-  // compute grad <- Sigma_chol.grad
-  {
-    int const m = 1, n = n_vars();
-    constexpr double const alpha{1};
-    constexpr char const c_L{'L'}, c_U{'U'}, c_N{'N'};
-    F77_CALL(dtrmm)
-      (&c_L, &c_U, &c_N, &c_N, &n, &m, &alpha, Sigma_chol.memptr(), &n,
-       grad, &n, 1, 1, 1, 1);
-  }
-
   return out;
 }
 
@@ -197,25 +146,14 @@ template<bool comp_grad>
 void mixed_mult_logit_term<comp_grad>::log_integrand_hess
   (double const *point, double *hess,
  simple_mem_stack<double> &mem) const {
-  double * const __restrict__ u{mem.get(2 * n_vars())},
-         * const __restrict__ lp_exp{u + n_vars()};
-
-  std::copy(point, point + n_vars(), u);
-  {
-    int const m = 1, n = n_vars();
-    constexpr double const alpha{1};
-    constexpr char const c_R{'R'}, c_U{'U'}, c_N{'N'};
-    F77_CALL(dtrmm)
-      (&c_R, &c_U, &c_N, &c_N, &m, &n, &alpha, Sigma_chol.memptr(), &n,
-       u, &m, 1, 1, 1, 1);
-  }
+  double * const __restrict__ lp_exp{mem.get(n_vars())};
 
   std::fill(hess, hess + n_vars() * n_vars(), 0);
   for(arma::uword k = 0; k < eta.n_cols; ++k){
     double denom{1};
     double const * eta_k{eta.colptr(k)};
     for(size_t i = 0; i < n_vars(); ++i, ++eta_k){
-      lp_exp[i] = exp(*eta_k + u[i]);
+      lp_exp[i] = exp(*eta_k + point[i]);
       denom += lp_exp[i];
     }
 
@@ -229,19 +167,6 @@ void mixed_mult_logit_term<comp_grad>::log_integrand_hess
       hess[j + j * n_vars()] -=
         (denom - lp_exp[j]) * lp_exp[j] / denom_sq;
     }
-  }
-
-  // compute hess <- Sigma_chol.hess.Sigma_chol^T
-  {
-    int const m = n_vars();
-    constexpr double const alpha{1};
-    constexpr char const c_R{'R'}, c_U{'U'}, c_N{'N'}, c_T{'T'}, c_L{'L'};
-    F77_CALL(dtrmm)
-      (&c_L, &c_U, &c_N, &c_N, &m, &m, &alpha, Sigma_chol.memptr(), &m,
-       hess, &m, 1, 1, 1, 1);
-    F77_CALL(dtrmm)
-      (&c_R, &c_U, &c_T, &c_N, &m, &m, &alpha, Sigma_chol.memptr(), &m,
-       hess, &m, 1, 1, 1, 1);
   }
 }
 

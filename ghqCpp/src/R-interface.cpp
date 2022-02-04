@@ -21,7 +21,8 @@ double expected_survival_term_to_R
    arma::vec const &nodes, size_t const target_size = 128,
    bool const use_adaptive = true){
   R_mem.reset();
-  expected_survival_term<false> prob(eta, ws, M, Sigma);
+  expected_survival_term<false> surv_term(eta, ws, M);
+  rescaled_problem<false> prob(Sigma, surv_term);
 
   auto ghq_data_pass = vecs_to_ghq_data(weights, nodes);
 
@@ -45,7 +46,8 @@ double mixed_mult_logit_term_to_R
    bool const use_adaptive = true){
   R_mem.reset();
 
-  mixed_mult_logit_term<false> prob(eta, Sigma, which_category);
+  mixed_mult_logit_term<false> logit_term(eta, which_category);
+  rescaled_problem<false> prob(Sigma, logit_term);
 
   auto ghq_data_pass = vecs_to_ghq_data(weights, nodes);
 
@@ -76,7 +78,8 @@ Rcpp::NumericVector mixed_mult_logit_term_grad
    bool const use_adaptive = true){
   R_mem.reset();
 
-  mixed_mult_logit_term<true> prob(eta, Sigma, which_category);
+  mixed_mult_logit_term<true> logit_term(eta, which_category);
+  rescaled_problem<false> prob(Sigma, logit_term);
 
   auto ghq_data_pass = vecs_to_ghq_data(weights, nodes);
 
@@ -105,19 +108,20 @@ double mixed_mult_logit_n_probit_term
    bool const use_adaptive = true){
   R_mem.reset();
 
-  mixed_mult_logit_term<false> logit(eta, Sigma, which_category);
-  mixed_probit_term<false> probit(s, eta_probit, Sigma, z);
+  mixed_mult_logit_term<false> logit(eta, which_category);
+  mixed_probit_term<false> probit(s, eta_probit, z);
   combined_problem prob_comb({&logit, &probit});
+  rescaled_problem<false> prob_scaled(Sigma, prob_comb);
 
   auto ghq_data_pass = vecs_to_ghq_data(weights, nodes);
 
   std::vector<double> res;
   if(use_adaptive){
-    adaptive_problem prob_adap(prob_comb, R_mem);
+    adaptive_problem prob_adap(prob_scaled, R_mem);
     res = ghq(ghq_data_pass, prob_adap, R_mem, target_size);
 
   } else
-    res = ghq(ghq_data_pass, prob_comb, R_mem, target_size);
+    res = ghq(ghq_data_pass, prob_scaled, R_mem, target_size);
 
   return res[0];
 }
@@ -132,19 +136,20 @@ double mixed_mult_logit_n_cond_pbvn
    size_t const target_size = 128, bool const use_adaptive = true){
   R_mem.reset();
 
-  mixed_mult_logit_term<false> logit(eta, Sigma, which_category);
-  cond_pbvn<false> prob_pbvn(eta_pbvn, Psi, V, Sigma);
+  mixed_mult_logit_term<false> logit(eta, which_category);
+  cond_pbvn<false> prob_pbvn(eta_pbvn, Psi, V);
   combined_problem prob_comb({&logit, &prob_pbvn});
+  rescaled_problem<false> prob_scaled(Sigma, prob_comb);
 
   auto ghq_data_pass = vecs_to_ghq_data(weights, nodes);
 
   std::vector<double> res;
   if(use_adaptive){
-    adaptive_problem prob_adap(prob_comb, R_mem);
+    adaptive_problem prob_adap(prob_scaled, R_mem);
     res = ghq(ghq_data_pass, prob_adap, R_mem, target_size);
 
   } else
-    res = ghq(ghq_data_pass, prob_comb, R_mem, target_size);
+    res = ghq(ghq_data_pass, prob_scaled, R_mem, target_size);
 
   return res[0];
 }

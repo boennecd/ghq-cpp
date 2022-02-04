@@ -332,59 +332,143 @@ void combined_problem::log_integrand_hess
   }
 }
 
-outer_prod_problem::outer_prod_problem(size_t const n_vars):
-  v_n_vars{n_vars} { }
-
-void outer_prod_problem::eval
-  (double const *points, size_t const n_points, double * __restrict__ outs,
-   simple_mem_stack<double> &mem) const {
-  // have till fill in the ones
-  std::fill(outs, outs + n_points, 1);
-  outs += n_points;
-
-  // compute the outer products
-  size_t out_offset{};
-  for(size_t j = 0; j < n_vars(); ++j)
-    for(size_t k = 0; k <= j; ++k, ++out_offset)
-        for(size_t i = 0; i < n_points; ++i)
-          outs[i + out_offset * n_points] =
-            points[i + k * n_points] * points[i + j * n_points];
-}
-
-double outer_prod_problem::log_integrand
-  (double const*, simple_mem_stack<double>&) const {
-  return 0;
-}
-
-double outer_prod_problem::log_integrand_grad
-  (double const*, double * __restrict__ gr, simple_mem_stack<double>&) const {
-  std::fill(gr, gr + n_vars(), 0);
-  return 0;
-}
-
-void outer_prod_problem::log_integrand_hess
-  (double const*, double * __restrict__ hess, simple_mem_stack<double>&) const {
-  std::fill(hess, hess + n_vars() * n_vars(), 0);
-}
-
-void outer_prod_problem::d_Sig
-  (double * __restrict__ res, double const *out, double const integral,
-   arma::mat const &Sigma) const {
-  arma::mat outer_int(n_vars(), n_vars());
-  for(arma::uword j = 0; j < outer_int.n_cols; ++j, ++out){
-    for(arma::uword i = 0; i < j; ++i, ++out){
-      outer_int(i, j) = *out / 2;
-      outer_int(j, i) = *out / 2;
-    }
-    outer_int(j, j) = (*out - integral) / 2;
+template<bool comp_grad>
+rescaled_problem<comp_grad>::rescaled_problem
+  (arma::mat const &Sigma, ghq_problem const &inner_problem):
+  Sigma_chol{arma::chol(Sigma)}, inner_problem{inner_problem} {
+    if(n_out_inner < 1)
+      throw std::invalid_argument("n_out_inner < 1");
+    if(inner_problem.n_vars() != n_vars())
+      throw std::invalid_argument("inner_problem.n_vars() != n_vars()");
   }
 
-  arma::mat const sig_chol = arma::chol(Sigma);
+template<bool comp_grad>
+void rescaled_problem<comp_grad>::eval
+  (double const *points, size_t const n_points, double * __restrict__ outs,
+   simple_mem_stack<double> &mem) const {
+  double * const __restrict__ us{mem.get(n_points * n_vars())};
+  auto mem_marker = mem.set_mark_raii();
+
+  // do the matrix product points.chol(Sigma)
+  std::copy(points, points + n_points * n_vars(), us);
+  {
+    int const m = n_points, n = n_vars();
+    constexpr double const alpha{1};
+    constexpr char const c_R{'R'}, c_U{'U'}, c_N{'N'};
+    F77_CALL(dtrmm)
+      (&c_R, &c_U, &c_N, &c_N, &m, &n, &alpha, Sigma_chol.memptr(), &n,
+       us, &m, 1, 1, 1, 1);
+  }
+
+  inner_problem.eval(us, n_points, outs, mem);
+
+  if constexpr(comp_grad){
+    // compute the weighted outer products
+    double const * const integrands{outs};
+    outs += n_points * n_out_inner;
+    size_t out_offset{};
+    for(size_t j = 0; j < n_vars(); ++j)
+      for(size_t k = 0; k <= j; ++k, ++out_offset)
+        for(size_t i = 0; i < n_points; ++i)
+          outs[i + out_offset * n_points] =
+            integrands[i] * points[i + k * n_points] * points[i + j * n_points];
+  }
+}
+
+template<bool comp_grad>
+double * rescaled_problem<comp_grad>::rescale
+  (double const *point, simple_mem_stack<double> &mem) const {
+  double * const __restrict__ u{mem.get(n_vars())};
+
+  std::copy(point, point + n_vars(), u);
+  {
+    int const m = 1, n = n_vars();
+    constexpr double const alpha{1};
+    constexpr char const c_R{'R'}, c_U{'U'}, c_N{'N'};
+    F77_CALL(dtrmm)
+      (&c_R, &c_U, &c_N, &c_N, &m, &n, &alpha, Sigma_chol.memptr(), &n,
+       u, &m, 1, 1, 1, 1);
+  }
+  return u;
+}
+
+template<bool comp_grad>
+double rescaled_problem<comp_grad>::log_integrand
+  (double const *point, simple_mem_stack<double> &mem) const {
+  auto u = rescale(point, mem);
+  auto mem_marker = mem.set_mark_raii();
+  return inner_problem.log_integrand(u, mem);
+}
+
+template<bool comp_grad>
+double rescaled_problem<comp_grad>::log_integrand_grad
+  (double const *point, double * __restrict__ gr,
+   simple_mem_stack<double> &mem) const {
+  auto u = rescale(point, mem);
+  auto mem_marker = mem.set_mark_raii();
+  double const out{inner_problem.log_integrand_grad(u, gr, mem)};
+
+  // compute gr <- Sigma_chol.gr
+  {
+    int const m = 1, n = n_vars();
+    constexpr double const alpha{1};
+    constexpr char const c_L{'L'}, c_U{'U'}, c_N{'N'};
+    F77_CALL(dtrmm)
+      (&c_L, &c_U, &c_N, &c_N, &n, &m, &alpha, Sigma_chol.memptr(), &n,
+       gr, &n, 1, 1, 1, 1);
+  }
+
+  return out;
+}
+
+template<bool comp_grad>
+void rescaled_problem<comp_grad>::log_integrand_hess
+  (double const *point, double * __restrict__ hess,
+   simple_mem_stack<double>&mem) const {
+  auto u = rescale(point, mem);
+  auto mem_marker = mem.set_mark_raii();
+  inner_problem.log_integrand_hess(u, hess, mem);
+
+  // compute hess <- Sigma_chol.hess.Sigma_chol^T
+  {
+    int const m = n_vars();
+    constexpr double const alpha{1};
+    constexpr char const c_R{'R'}, c_U{'U'}, c_N{'N'}, c_T{'T'}, c_L{'L'};
+    F77_CALL(dtrmm)
+      (&c_L, &c_U, &c_N, &c_N, &m, &m, &alpha, Sigma_chol.memptr(), &m,
+       hess, &m, 1, 1, 1, 1);
+    F77_CALL(dtrmm)
+      (&c_R, &c_U, &c_T, &c_N, &m, &m, &alpha, Sigma_chol.memptr(), &m,
+       hess, &m, 1, 1, 1, 1);
+  }
+}
+
+template<bool comp_grad>
+void rescaled_problem<comp_grad>::post_process
+  (double * __restrict__ res, double const integral)
+  const {
+  res += inner_problem.n_out();
+
+  arma::mat outer_int(n_vars(), n_vars());
+  {
+    double * res_ij{res};
+    for(arma::uword j = 0; j < outer_int.n_cols; ++j, ++res_ij){
+      for(arma::uword i = 0; i < j; ++i, ++res_ij){
+        outer_int(i, j) = *res_ij / 2;
+        outer_int(j, i) = *res_ij / 2;
+      }
+      outer_int(j, j) = (*res_ij - integral) / 2;
+    }
+  }
+
   arma::mat lhs(res, n_vars(), n_vars(), false);
 
   lhs = arma::solve
-    (arma::trimatu(sig_chol),
-     arma::solve(arma::trimatu(sig_chol), outer_int).t());
+    (arma::trimatu(Sigma_chol),
+     arma::solve(arma::trimatu(Sigma_chol), outer_int).t());
 }
+
+template class rescaled_problem<false>;
+template class rescaled_problem<true>;
 
 } // namespace ghqCpp

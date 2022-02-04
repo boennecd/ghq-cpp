@@ -57,7 +57,8 @@ context("mixed_mult_logit_term works as expected") {
                  true_hess[]{-0.905709341570217, -0.613183151058906, 0.374124733829623, -0.613183151058906, -2.82309941652404, 0.35104427634114, 0.374124733829623, 0.35104427634114, -0.278036077869056};
 
     simple_mem_stack<double> mem;
-    mixed_mult_logit_term<false> prob(eta, Sigma, which_cat);
+    mixed_mult_logit_term<false> logit_term(eta, which_cat);
+    rescaled_problem<false> prob(Sigma, logit_term);
 
     expect_true
       (std::abs(prob.log_integrand(point, mem) - true_fn) <
@@ -125,40 +126,33 @@ context("mixed_mult_logit_term works as expected") {
     ghq_data dat{ghq_nodes, ghq_weights, 15};
 
     {
-      mixed_mult_logit_term<false> mult_term(eta, Sigma, which_cat);
-      adaptive_problem prob(mult_term, mem);
+      mixed_mult_logit_term<false> mult_term(eta, which_cat);
+      rescaled_problem<false> prob_resclaed(Sigma, mult_term);
+      adaptive_problem prob(prob_resclaed, mem);
 
       auto res = ghq(dat, prob, mem);
       expect_true(res.size() == 1);
       expect_true(std::abs(res[0] - true_fn) < eps_fn);
     }
 
-    mixed_mult_logit_term<true> mult_term(eta, Sigma, which_cat);
-    outer_prod_problem outer_term(Sigma.n_cols);
-
-    std::vector<ghq_problem const *> const prob_dat{ &mult_term, &outer_term };
-    combined_problem prob(prob_dat);
+    mixed_mult_logit_term<true> mult_term(eta, which_cat);
+    rescaled_problem<true> prob(Sigma, mult_term);
     adaptive_problem prob_adap(prob, mem);
 
     auto res = ghq(dat, prob_adap, mem);
 
-    // handle the derivatives w.r.t. Sigma
+    prob.post_process(res.data(), res[0]);
+
+    size_t const n_grad = std::distance(std::begin(true_gr), std::end(true_gr));
+    expect_true(res.size() == 1 + n_grad);
+
     size_t const fixef_shift{mult_term.n_out()};
-    std::vector<double> out(fixef_shift + Sigma.n_cols * Sigma.n_cols);
-    std::copy(res.begin(), res.begin() + fixef_shift, &out[0]);
-    outer_term.d_Sig
-      (&out[fixef_shift], res.data() + fixef_shift, res[0], Sigma);
-
-    size_t const n_grad =
-      std::distance(std::begin(true_gr), std::end(true_gr));
-    expect_true(out.size() == 1 + n_grad);
-
-    expect_true(std::abs(out[0] - true_fn) < eps_fn);
+    expect_true(std::abs(res[0] - true_fn) < eps_fn);
     for(size_t i = 0; i < fixef_shift; ++i)
       expect_true
-        (std::abs(out[i + 1] - true_gr[i]) < 1e-4 * std::abs(true_gr[i]));
+        (std::abs(res[i + 1] - true_gr[i]) < 1e-4 * std::abs(true_gr[i]));
     for(size_t i = fixef_shift; i < n_grad; ++i)
       expect_true
-        (std::abs(out[i + 1] - true_gr[i]) < 1e-3 * std::abs(true_gr[i]));
+        (std::abs(res[i + 1] - true_gr[i]) < 1e-3 * std::abs(true_gr[i]));
   }
 }

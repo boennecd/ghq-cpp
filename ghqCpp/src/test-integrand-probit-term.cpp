@@ -47,22 +47,23 @@ context("mixed_probit_term works as expected") {
                  true_hess[]{-0.017353738156663, 0.0356344612756232, -0.0153348633039639, 0.0356344612756232, -0.0731724092974138, 0.031488869314097, -0.0153348633039639, 0.031488869314097, -0.0135508574925665};
 
     simple_mem_stack<double> mem;
-    mixed_probit_term probit_prob(s, eta, Sigma, z);
+    mixed_probit_term probit_prob(s, eta, z);
+    rescaled_problem prob_rescaled(Sigma, probit_prob);
 
     {
-      double const res{probit_prob.log_integrand(point, mem)};
+      double const res{prob_rescaled.log_integrand(point, mem)};
       expect_true(std::abs(res - true_fn) < std::abs(true_fn) * 1e-8);
     }
     {
       double gr[K];
-      double const res{probit_prob.log_integrand_grad(point, gr, mem)};
+      double const res{prob_rescaled.log_integrand_grad(point, gr, mem)};
       expect_true(std::abs(res - true_fn) < std::abs(true_fn) * 1e-8);
       for(size_t i = 0; i < K; ++i)
         expect_true(std::abs(gr[i] - true_gr[i]) < std::abs(true_gr[i]) * 1e-8);
     }
 
     double hess[K * K];
-    probit_prob.log_integrand_hess(point, hess, mem);
+    prob_rescaled.log_integrand_hess(point, hess, mem);
     for(size_t i = 0; i < K * K; ++i)
       expect_true
         (std::abs(hess[i] - true_hess[i]) < std::abs(true_hess[i]) * 1e-8);
@@ -90,16 +91,18 @@ context("mixed_probit_term works as expected") {
     ghq_data dat{ghq_nodes, ghq_weights, 15};
 
     {
-      mixed_probit_term<false> probit_prob(s, eta, Sigma, z);
-      adaptive_problem prob(probit_prob, mem);
+      mixed_probit_term<false> probit_prob(s, eta, z);
+      rescaled_problem<false> prob_recaled(Sigma, probit_prob);
+      adaptive_problem prob(prob_recaled, mem);
 
       auto res = ghq(dat, prob, mem);
       expect_true(res.size() == 1);
       expect_true(std::abs(res[0] - true_fn) < std::abs(true_fn) * 1e-8);
     }
 
-    mixed_probit_term<true> probit_prob(s, eta, Sigma, z);
-    adaptive_problem prob(probit_prob, mem);
+    mixed_probit_term<true> probit_prob(s, eta, z);
+    rescaled_problem<false> prob_recaled(Sigma, probit_prob);
+    adaptive_problem prob(prob_recaled, mem);
 
     auto res = ghq(dat, prob, mem);
     expect_true(res.size() == 3 + K);

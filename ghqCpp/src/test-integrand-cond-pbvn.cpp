@@ -55,20 +55,21 @@ context("cond_pbvn works as expected") {
                      point[]{0.978, -0.205, -0.769};
 
     simple_mem_stack<double> mem;
-    cond_pbvn<false> pbvn_term(eta, Psi, V, Sigma);
+    cond_pbvn<false> pbvn_term(eta, Psi, V);
+    rescaled_problem<false> prob(Sigma, pbvn_term);
     {
-      double const res{pbvn_term.log_integrand(point, mem)};
+      double const res{prob.log_integrand(point, mem)};
       expect_true(std::abs(res - true_fn) < std::abs(true_fn) * 1e-8);
     }
     {
       double gr[3];
-      double const res{pbvn_term.log_integrand_grad(point, gr, mem)};
+      double const res{prob.log_integrand_grad(point, gr, mem)};
       expect_true(std::abs(res - true_fn) < std::abs(true_fn) * 1e-8);
       for(unsigned i = 0; i < 3; ++i)
         expect_true(std::abs(gr[i] - true_gr[i]) < std::abs(true_gr[i]) * 1e-5);
     }
     double hess[9];
-    pbvn_term.log_integrand_hess(point, hess, mem);
+    prob.log_integrand_hess(point, hess, mem);
     for(unsigned i = 0; i < 9; ++i)
       expect_true
         (std::abs(hess[i] - true_hess[i]) < std::abs(true_hess[i]) * 1e-5);
@@ -99,16 +100,19 @@ context("cond_pbvn works as expected") {
     ghq_data dat{ghq_nodes, ghq_weights, 25};
 
     {
-      cond_pbvn<false> pbvn_term(eta, Psi, V, Sigma);
-      adaptive_problem prob(pbvn_term, mem);
+      cond_pbvn<false> pbvn_term(eta, Psi, V);
+      rescaled_problem<false> prop(Sigma, pbvn_term);
+
+      adaptive_problem prob(prop, mem);
       auto res = ghq(dat, prob, mem);
       expect_true(res.size() == 1);
       expect_true(std::abs(res[0] - true_fn) < std::abs(true_fn) * 1e-5);
     }
 
     // test the gradient
-    cond_pbvn<true> pbvn_term(eta, Psi, V, Sigma);
-    adaptive_problem prob(pbvn_term, mem);
+    cond_pbvn<true> pbvn_term(eta, Psi, V);
+    rescaled_problem<false> prop(Sigma, pbvn_term);
+    adaptive_problem prob(prop, mem);
     auto res = ghq(dat, prob, mem);
     expect_true(res.size() == 7 + 2 * K);
 

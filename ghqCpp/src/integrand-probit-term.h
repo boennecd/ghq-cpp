@@ -17,16 +17,13 @@ namespace ghqCpp {
 template<bool comp_grad = false>
 class mixed_probit_term final : public ghq_problem {
   double const s, eta;
-  arma::mat const Sigma_chol;
-  arma::vec const Sigma_chol_z;
+  arma::vec const &z;
 
-  size_t const v_n_vars = Sigma_chol_z.n_elem,
-                v_n_out{comp_grad ? 3 + Sigma_chol_z.n_elem: 1};
+  size_t const v_n_vars = z.n_elem,
+                v_n_out{comp_grad ? 3 + z.n_elem: 1};
 
 public:
-  mixed_probit_term
-    (double const s, double const eta, arma::mat const &Sigma,
-     arma::vec const &z);
+  mixed_probit_term(double const s, double const eta, arma::vec const &z);
 
   size_t n_vars() const { return v_n_vars; }
   size_t n_out() const { return v_n_out; }

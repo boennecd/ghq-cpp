@@ -17,8 +17,6 @@ namespace ghqCpp {
  *
  *    1 / (1 + sum_(j = 1)^K exp(eta[i, j - 1] + u[j - 1]))
  *
- *  The random effect is assumed to be N(0, Sigma).
- *
  *  If the gradient is required, the first output is the integral and the next
  *  elements are the gradients w.r.t. the eta matrix.
  */
@@ -29,7 +27,6 @@ class mixed_mult_logit_term final : public ghq_problem {
    * (K - 1) x <number of outcomes> matrix
    */
   arma::mat const &eta;
-  arma::mat const Sigma_chol;
   // the category of each outcome. It is zero indexed
   arma::uvec const &which_category;
 
@@ -37,8 +34,8 @@ class mixed_mult_logit_term final : public ghq_problem {
                v_n_out{comp_grad ? 1 + eta.n_rows * eta.n_cols: 1};
 
 public:
-  mixed_mult_logit_term(arma::mat const &eta, arma::mat const &Sigma,
-                        arma::uvec const &which_category);
+  mixed_mult_logit_term
+    (arma::mat const &eta, arma::uvec const &which_category);
 
   size_t n_vars() const { return v_n_vars; }
   size_t n_out() const { return v_n_out; }

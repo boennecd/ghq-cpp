@@ -220,35 +220,43 @@ public:
 };
 
 /**
- * computes g(x) = (1, x.x^T) where only the upper triangle is stored for the
- * outer product. This is useful when used with combined_problem for problems
- * of the form
+ * Rescales a problem from and to
  *
- *   int phi(x; 0, Sigma)g_1(x)...g_l(x) dx
- *     = int phi(x)g_1(C.x)...g_l(C.x) dx
+ *   A = int phi(x; 0, Sigma)g(x) dx = int phi(x)g(C.x) dx
  *
- * where C.C^T = Sigma is the Cholesky decomposition. In the framework defined
- * here, we then redfine the g functions as h_i(x) = g_i(C.x).
+ * where C.C^T = Sigma is the Cholesky decomposition. If passed problem is
+ * multivariate, then it is assumed that the first element of the the output
+ * is the integrand of A of interest.
  *
- * The derivatives w.r.t. Sigma in this case is
+ * The derivatives w.r.t. Sigma can be computed and are appended after those of
+ * g. These are given by
  *
  *   1/2 Sigma^(-1)
- *     [int (x.x^T - Sigma) phi(x; 0, Sigma)g_1(x)...g_l(x) dx]Sigma^(-1)
- *    = 1/2 C^(-T)
- *      [int (x.x^T - I) phi(x; 0, Sigma)h_1(x)...h_l(x) dx]C^(-1)
+ *     [int (x.x^T - Sigma) phi(x; 0, Sigma)g(x)dx]Sigma^(-1)
+ *    = 1/2 C^(-T)[int (x.x^T - I) phi(x)g(C.x)dx]C^(-1)
  *
  * so we need to compute
  *
- *   int x.x^T phi(x; 0, Sigma)h_1(x)...h_l(x) dx
+ *   int x.x^T phi(x)h(x)dx
  *
- * to compute the gradient w.r.t. Sigma.
+ * Thus, this is stored as the last elements and the final derivatives can be
+ * computed with the post_process member function. Only the upper triangle is
+ * stored during the quadrature.
  */
-class outer_prod_problem final : public ghq_problem  {
-  size_t const v_n_vars,
-               v_n_out{1 + (v_n_vars * (v_n_vars + 1)) / 2};
+template<bool comp_grad = false>
+class rescaled_problem final : public ghq_problem  {
+  arma::mat const Sigma_chol;
+  ghq_problem const &inner_problem;
+
+  size_t const v_n_vars = Sigma_chol.n_cols,
+            n_out_inner{inner_problem.n_out()},
+                v_n_out{comp_grad ? n_out_inner + v_n_vars * v_n_vars
+                                  : n_out_inner};
+
+  double * rescale(double const *point, simple_mem_stack<double> &mem) const;
 
 public:
-  outer_prod_problem(size_t const n_vars);
+  rescaled_problem(arma::mat const &Sigma, ghq_problem const &inner_problem);
 
   size_t n_vars() const { return v_n_vars; }
   size_t n_out() const { return v_n_out; }
@@ -269,15 +277,12 @@ public:
      simple_mem_stack<double> &mem) const;
 
   /**
-   * computes the derivatives w.r.t. Sigma given the last
-   * (n_vars() * (n_vars() + 1)) / 2 elements of the final output, the value of
-   *  the entire integral, and the covariance matrix Sigma.
-   *
-   *  The result is stored in a n_vars() x n_vars() matrix.
+   * computes the derivatives w.r.t. Sigma given the final output and the value of
+   * the entire integral.
    */
-  void d_Sig
-    (double * __restrict__ res, double const *out, double const integral,
-     arma::mat const &Sigma) const;
+  void post_process
+    (double * __restrict__ res, double const integral)
+    const;
 };
 
 } // namespace ghqCpp

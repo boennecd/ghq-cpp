@@ -6,16 +6,12 @@
 namespace ghqCpp {
 template<bool comp_grad>
 cond_pbvn<comp_grad>::cond_pbvn
-  (arma::vec const &eta, arma::mat const &Psi, arma::mat const &V,
-   arma::mat const &Sigma):
-  eta{eta}, Psi{Psi}, Sigma_chol(arma::chol(Sigma)),
-  V_Sigma_chol_t{V * Sigma_chol.t()} {
+  (arma::vec const &eta, arma::mat const &Psi, arma::mat const &V):
+  eta{eta}, Psi{Psi}, V(V) {
     if(eta.n_elem != 2)
       throw std::invalid_argument("eta.n_elem != 2");
     else if(V.n_rows != 2)
       throw std::invalid_argument("V.n_rows != 2");
-    else if(V.n_cols != Sigma.n_rows)
-      throw std::invalid_argument("V.n_cols != Sigma.n_rows");
   }
 
 template<bool comp_grad>
@@ -29,7 +25,7 @@ void cond_pbvn<comp_grad>::eval
   for(size_t k = 0; k < 2; ++k)
     for(size_t i = 0; i < n_vars(); ++i)
       for(size_t j = 0; j < n_points; ++j)
-        mu[k + j * 2] += V_Sigma_chol_t(k, i) * points[j + i * n_points];
+        mu[k + j * 2] += V(k, i) * points[j + i * n_points];
 
   if constexpr (!comp_grad){
     for(size_t j = 0; j < n_points; ++j)
@@ -47,19 +43,7 @@ void cond_pbvn<comp_grad>::eval
     for(size_t i = 0; i < 2; ++i)
       outs[j + (i + 1) * n_points] = d_eta[i];
     for(size_t i = 0; i < 4; ++i)
-      outs[j + (i + 3 + V_Sigma_chol_t.n_elem) * n_points] = d_Psi[i];
-  }
-
-  // do the matrix product points.chol(Sigma)
-  double * const __restrict__ us{mem.get(n_points * n_vars())};
-  std::copy(points, points + n_points * n_vars(), us);
-  {
-    int const m = n_points, n = n_vars();
-    constexpr double const alpha{1};
-    constexpr char const c_R{'R'}, c_U{'U'}, c_N{'N'};
-    F77_CALL(dtrmm)
-      (&c_R, &c_U, &c_N, &c_N, &m, &n, &alpha, Sigma_chol.memptr(), &n,
-       us, &m, 1, 1, 1, 1);
+      outs[j + (i + 3 + V.n_elem) * n_points] = d_Psi[i];
   }
 
   // handle the derivatives w.r.t. V
@@ -70,7 +54,7 @@ void cond_pbvn<comp_grad>::eval
     for(size_t i = 0; i < n_vars(); ++i)
       for(size_t j = 0; j < n_points; ++j)
         d_Vs[j + k * n_points + i * 2 * n_points] =
-          d_eta[j + k * n_points] * us[j + i * n_points];
+          d_eta[j + k * n_points] * points[j + i * n_points];
 }
 
 
@@ -81,7 +65,7 @@ double cond_pbvn<comp_grad>::log_integrand
   std::copy(eta.begin(), eta.end(), mu);
   for(size_t k = 0; k < 2; ++k)
     for(size_t i = 0; i < n_vars(); ++i)
-      mu[k] += V_Sigma_chol_t(k, i) * point[i];
+      mu[k] += V(k, i) * point[i];
 
   return std::log(pbvn(mu, Psi.memptr()));
 }
@@ -95,13 +79,13 @@ double cond_pbvn<comp_grad>::log_integrand_grad
   std::copy(eta.begin(), eta.end(), mu);
   for(size_t k = 0; k < 2; ++k)
     for(size_t i = 0; i < n_vars(); ++i)
-        mu[k] += V_Sigma_chol_t(k, i) * point[i];
+        mu[k] += V(k, i) * point[i];
 
   double const fn{pbvn_grad<1, false>(mu, Psi.memptr(), gr_inter)};
   std::fill(grad, grad + n_vars(), 0);
   for(size_t k = 0; k < 2; ++k)
     for(size_t i = 0; i < n_vars(); ++i)
-      grad[i] += V_Sigma_chol_t(k, i) * gr_inter[k] / fn;
+      grad[i] += V(k, i) * gr_inter[k] / fn;
   return std::log(fn);
 }
 
@@ -115,7 +99,7 @@ void cond_pbvn<comp_grad>::log_integrand_hess
   std::copy(eta.begin(), eta.end(), mu);
   for(size_t k = 0; k < 2; ++k)
     for(size_t i = 0; i < n_vars(); ++i)
-      mu[k] += V_Sigma_chol_t(k, i) * point[i];
+      mu[k] += V(k, i) * point[i];
 
   double const fn{pbvn_grad<1, false>(mu, Psi.memptr(), gr_inter)};
   pbvn_hess(mu, Psi.memptr(), hess_inter);
@@ -129,7 +113,7 @@ void cond_pbvn<comp_grad>::log_integrand_hess
   // TODO: do this in a smarter way
   arma::mat hess_inter_mat(hess_inter, 2, 2, false);
   arma::mat res(hess, n_vars(), n_vars(), false);
-  res = V_Sigma_chol_t.t() * hess_inter_mat * V_Sigma_chol_t;
+  res = V.t() * hess_inter_mat * V;
 }
 
 template class cond_pbvn<false>;
