@@ -229,8 +229,8 @@ public:
  *
  *   A = int phi(x; 0, Sigma)g(x) dx = int phi(x)g(C.x) dx
  *
- * where C.C^T = Sigma is the Cholesky decomposition. If passed problem is
- * multivariate, then it is assumed that the first element of the the output
+ * where C.C^T = Sigma is the Cholesky decomposition. If the passed problem 
+ * is multivariate, then it is assumed that the first element of the output
  * is the integrand of A of interest.
  *
  * The derivatives w.r.t. Sigma can be computed and are appended after those of
