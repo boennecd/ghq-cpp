@@ -1,7 +1,7 @@
 #ifndef GHQ_H
 #define GHQ_H
 
-#include "simple_mem_stack.h"
+#include "simple-mem-stack.h"
 #include <RcppArmadillo.h>
 #include <algorithm>
 #include <stdexcept>

@@ -19,9 +19,8 @@ template<bool comp_grad>
 void mixed_mult_logit_term<comp_grad>::eval
   (double const *points, size_t const n_points, double * __restrict__ outs,
    simple_mem_stack<double> &mem) const {
-  double * const __restrict__ point{mem.get(n_vars())};
-
   if constexpr (comp_grad){
+    double * const __restrict__ point{mem.get(n_vars())};
     double * const terms{mem.get(2 * eta.n_cols + eta.n_cols * eta.n_rows)},
            * const denoms{terms + eta.n_cols},
            * const lps{denoms + eta.n_cols};
@@ -61,26 +60,40 @@ void mixed_mult_logit_term<comp_grad>::eval
     }
 
   } else {
-    double * const __restrict__ lp{mem.get(n_vars())};
+    double * const __restrict__ denoms
+      {mem.get((1 + n_vars()) * n_points * eta.n_cols)},
+           * const __restrict__ lps{denoms + n_points * eta.n_cols};
 
-    // do the computations point by point
-    for(size_t j = 0; j < n_points; ++j){
-      // copy the random effect
+    double const * eta_ptr{eta.memptr()};
+    for(size_t k = 0; k < eta.n_cols; ++k)
       for(size_t i = 0; i < n_vars(); ++i)
-        point[i] = points[j + i * n_points];
+        for(size_t j = 0; j < n_points; ++j)
+          lps[j + i * n_points + k * n_points * n_vars()] =
+            eta_ptr[i + k * n_vars()] + points[j + i * n_points];
 
-      outs[j] = 1;
-      for(arma::uword k = 0; k < eta.n_cols; ++k){
-        double denom{1};
-        double const * eta_k{eta.colptr(k)};
-        for(size_t i = 0; i < n_vars(); ++i, ++eta_k){
-          lp[i] = std::exp(*eta_k + point[i]);
-          denom += lp[i];
-        }
+    std::for_each(lps, lps + eta.n_cols * n_vars() * n_points,
+                  [](double &x) { x = std::exp(x); });
 
-        double const numerator
-          {which_category[k] < 1 ? 1 : lp[which_category[k] - 1]};
-        outs[j] *= numerator / denom;
+    std::fill(denoms, denoms + n_points * eta.n_cols, 1);
+    for(size_t k = 0; k < eta.n_cols; ++k)
+      for(size_t i = 0; i < n_vars(); ++i)
+        for(size_t j = 0; j < n_points; ++j)
+          denoms[j + k * n_points] +=
+            lps[j + i * n_points + k * n_points * n_vars()];
+
+    std::fill(outs, outs + n_points, 1);
+    for(size_t k = 0; k < eta.n_cols; ++k){
+      if(which_category[k] < 1){
+        for(size_t j = 0; j < n_points; ++j)
+          outs[j] *= 1 / denoms[j + k * n_points];
+
+      } else {
+        size_t const offset_case =
+          (which_category[k] - 1) * n_points;
+        for(size_t j = 0; j < n_points; ++j)
+          outs[j] *=
+            lps[j + offset_case + k * n_points * n_vars()] /
+              denoms[j + k * n_points];
       }
     }
   }

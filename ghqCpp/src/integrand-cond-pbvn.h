@@ -11,7 +11,7 @@ namespace ghqCpp {
  *   g(U) = Phi^{(2)}(0, eta + V.U, Psi)
  *
  * where Phi^{(2)} is the CDF of a bivariate normal distribution over the
- * rectangle (-Inf, 0)^2 with the passed conditional mean and variance.
+ * negative orthant with the passed conditional mean and variance.
  *
  * The derivatives are computed w.r.t. eta, V and Psi.
  */
