@@ -40,10 +40,11 @@ adaptive_problem::adaptive_problem
     mode_problem my_mode_problem(problem, mem);
     mu.zeros(n_vars());
 
-    // TODO: I can avoid the allocation in PSQN::bfgs with minor changes in the
-    //       package
+    double *bfgs_mem{mem.get(PSQN::bfgs_n_wmem(n_vars()))};
+    auto bfgs_marker = mem.set_mark_raii();
     auto res = PSQN::bfgs
-      (my_mode_problem, mu.memptr(), rel_eps, max_it, c1, c2, 0L, gr_tol);
+      (my_mode_problem, mu.memptr(), bfgs_mem, rel_eps, max_it, c1, c2, 0L,
+       gr_tol);
 
     bool succeeded = res.info == PSQN::info_code::converged;
     if(succeeded){
@@ -72,7 +73,6 @@ adaptive_problem::adaptive_problem
       C.diag() += 1;
       sq_C_deter = 1;
     }
-    mem.reset_to_mark();
   }
 
 void adaptive_problem::eval
