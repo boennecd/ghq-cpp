@@ -32,3 +32,8 @@ mixed_mult_logit_n_cond_pbvn <- function(eta, which_category, eta_pbvn, Psi, V, 
     .Call(`_ghqCpp_mixed_mult_logit_n_cond_pbvn`, eta, which_category, eta_pbvn, Psi, V, Sigma, weights, nodes, target_size, use_adaptive)
 }
 
+#' @export
+pbvn <- function(mu, Sigma, method) {
+    .Call(`_ghqCpp_pbvn`, mu, Sigma, method)
+}
+

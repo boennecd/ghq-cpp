@@ -2,6 +2,7 @@
 #include "integrand-mixed-mult-logit-term.h"
 #include "integrand-probit-term.h"
 #include "integrand-cond-pbvn.h"
+#include "pbvn.h"
 
 using namespace ghqCpp;
 
@@ -152,4 +153,21 @@ double mixed_mult_logit_n_cond_pbvn
     res = ghq(ghq_data_pass, prob_scaled, R_mem, target_size);
 
   return res[0];
+}
+
+//' @export
+// [[Rcpp::export(rng = false)]]
+double pbvn
+  (Rcpp::NumericVector const mu, Rcpp::NumericMatrix const Sigma,
+   int const method){
+  if(mu.size() != 2)
+    throw std::invalid_argument("invalid mu");
+  else if(Sigma.nrow() != 2 || Sigma.ncol() != 2)
+    throw std::invalid_argument("invalid Sigma");
+  else if(method < 0 || method > 1)
+    throw std::invalid_argument("invalid method");
+
+  if(method == 0)
+    return pbvn<0>(&mu[0], &Sigma[0]);
+  return pbvn<1>(&mu[0], &Sigma[0]);
 }

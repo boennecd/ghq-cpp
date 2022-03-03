@@ -3,3 +3,4 @@
 ^LICENSE\.md$
 ^install-pkg\.sh
 ^install-pkg-wo-clean\.sh
+^benchmark

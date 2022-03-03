@@ -1,0 +1,212 @@
+
+R version 4.1.2 (2021-11-01) -- "Bird Hippie"
+Copyright (C) 2021 The R Foundation for Statistical Computing
+Platform: x86_64-pc-linux-gnu (64-bit)
+
+R is free software and comes with ABSOLUTELY NO WARRANTY.
+You are welcome to redistribute it under certain conditions.
+Type 'license()' or 'licence()' for distribution details.
+
+  Natural language support but running in an English locale
+
+R is a collaborative project with many contributors.
+Type 'contributors()' for more information and
+'citation()' on how to cite R or R packages in publications.
+
+Type 'demo()' for some demos, 'help()' for on-line help, or
+'help.start()' for an HTML browser interface to help.
+Type 'q()' to quit R.
+
+> library(mvtnorm)
+> library(ghqCpp)
+> 
+> # compute relative errors for different configurations with the two
+> # implementations
+> comp_errors <- \(method)
++ sapply(seq_len(1e4), \(i){
++   set.seed(i)
++   truth <- -Inf
++   while(!is.finite(truth) || truth < 1e-12){
++     Sigma <- rWishart(1, 2, diag(2)) |> drop()
++     mu <- rnorm(2)
++     truth <- pmvnorm(upper = numeric(2), mean = mu, sigma = Sigma)
++   }
++ 
++   # compute the error and return
++   est <- pbvn(mu, Sigma, method = method)
++   c(absolute = est - truth, relative = (est - truth) / truth, truth = truth)
++ }, simplify = "array")
+> 
+> errs_method0 <- comp_errors(0)
+> errs_method1 <- comp_errors(1)
+> 
+> # look at stats for the absolute errors
+> abs(errs_method0[c("absolute", "relative"), ]) |>
++   apply(1, quantile,
++         probs = seq(0, 1, length.out = 21) |> c(.99, .999) |> sort())
+          absolute     relative
+0%    0.000000e+00 0.000000e+00
+5%    1.515473e-18 2.139165e-16
+10%   2.775558e-17 3.723896e-16
+15%   6.245005e-17 4.367368e-16
+20%   1.110223e-16 5.230014e-16
+25%   2.220446e-16 3.005145e-15
+30%   4.440892e-16 5.609139e-14
+35%   4.676485e-14 2.514377e-12
+40%   3.414802e-12 7.218043e-11
+45%   4.748617e-11 1.092510e-09
+50%   4.387240e-10 8.443700e-09
+55%   3.597645e-09 5.500899e-08
+60%   1.817511e-08 2.529350e-07
+65%   5.743732e-08 7.018146e-07
+70%   1.403818e-07 1.359997e-06
+75%   2.739122e-07 2.244450e-06
+80%   4.634663e-07 3.621601e-06
+85%   7.594308e-07 5.539629e-06
+90%   1.262557e-06 7.827207e-06
+95%   2.582460e-06 9.378340e-06
+99%   1.416105e-05 2.887548e-05
+99.9% 1.128705e-03 4.265294e-03
+100%  3.942974e-03 7.191028e-02
+> abs(errs_method1[c("absolute", "relative"), ]) |>
++   apply(1, quantile,
++         probs = seq(0, 1, length.out = 21) |> c(.99, .999) |> sort())
+          absolute     relative
+0%    0.000000e+00 0.000000e+00
+5%    0.000000e+00 0.000000e+00
+10%   0.000000e+00 0.000000e+00
+15%   0.000000e+00 0.000000e+00
+20%   0.000000e+00 0.000000e+00
+25%   0.000000e+00 0.000000e+00
+30%   0.000000e+00 0.000000e+00
+35%   0.000000e+00 0.000000e+00
+40%   5.963112e-19 1.219496e-16
+45%   6.938894e-18 1.472902e-16
+50%   1.387779e-17 1.748142e-16
+55%   2.775558e-17 2.053557e-16
+60%   2.775558e-17 2.548168e-16
+65%   5.551115e-17 3.418622e-16
+70%   5.551115e-17 4.250891e-16
+75%   5.551115e-17 5.755743e-16
+80%   8.326673e-17 7.793083e-16
+85%   1.110223e-16 1.246320e-15
+90%   1.110223e-16 3.088349e-15
+95%   1.665335e-16 2.651456e-14
+99%   2.220446e-16 2.875940e-10
+99.9% 8.881784e-16 1.255796e-06
+100%  1.793353e-15 2.189607e-05
+> 
+> # compare the computation time
+> set.seed(1)
+> Sigma <- rWishart(1, 2, diag(2)) |> drop()
+> mu <- rnorm(2)
+> 
+> bench::mark(
++   `pbvn method 0` = pbvn(mu, Sigma, method = 0),
++   `pbvn method 1` = pbvn(mu, Sigma, method = 1),
++   check = FALSE)
+# A tibble: 2 × 13
+  expression         min   median `itr/sec` mem_alloc `gc/sec` n_itr  n_gc
+  <bch:expr>    <bch:tm> <bch:tm>     <dbl> <bch:byt>    <dbl> <int> <dbl>
+1 pbvn method 0    5.2µs   5.42µs   177508.        0B     17.8  9999     1
+2 pbvn method 1   1.35µs   1.51µs   559037.        0B      0   10000     0
+# … with 5 more variables: total_time <bch:tm>, result <list>, memory <list>,
+#   time <list>, gc <list>
+> 
+> # # check the time to do a 1000 evaluations (assuming that the optimizer does not
+> # # do something crazy)
+> # bench::mark(`pbvn method 0` = pbvn(mu, Sigma, n_rep = 1000, method = 0),
+> #             `pbvn method 1` = pbvn(mu, Sigma, n_rep = 1000, method = 1),
+> #             pmvnorm_C(mu = mu, Sigma = Sigma, n_rep = 1000))
+> #
+> # # check the gradient
+> # library(numDeriv)
+> # errs <- sapply(seq_len(1e4), \(i){
+> #   set.seed(i)
+> #   truth <- -Inf
+> #   while(!is.finite(truth) || truth < 1e-12){
+> #     Sigma <- rWishart(1, 2, diag(2)) |> drop()
+> #     mu <- rnorm(2)
+> #     truth <- pmvnorm(upper = numeric(2), mean = mu, sigma = Sigma)
+> #   }
+> #
+> #   # compute the gradient numerically of the log of the interval
+> #   fn <- pmvnorm(upper = numeric(2), mean = mu, sigma = Sigma)
+> #   num_grad <- grad(
+> #     \(par) {
+> #       mu <- head(par, 2)
+> #       S <- matrix(nrow = 2, ncol = 2)
+> #       S[upper.tri(S, TRUE)] <- tail(par, 3)
+> #       S[lower.tri(S)] <- t(S)[lower.tri(S)]
+> #
+> #       pmvnorm_C(mu = mu, Sigma = S)
+> #     }, c(mu, Sigma[upper.tri(Sigma, TRUE)]), method.args = list(r = 6))
+> #
+> #   # compute the gradient, compute the error and return
+> #   est <- pbvn_grad(mu = mu, Sigma = Sigma)
+> #
+> #   # only keep the upper triangle
+> #   d_Sig <- tail(est, 4) |> matrix(nrow = 2)
+> #   d_Sig[upper.tri(d_Sig)] <- 2 * d_Sig[upper.tri(d_Sig)]
+> #   val <- attr(est, "value")
+> #   est <- c(val, c(head(est, 2), d_Sig[upper.tri(d_Sig, TRUE)]) / val)
+> #
+> #   truth <- c(fn, num_grad / fn) |>
+> #     setNames(c("integral", "d mu1", "d mu2", "d Sig11", "d Sig12",
+> #                "d Sig22"))
+> #   err <- est - truth
+> #   relative = ifelse(abs(truth) < 1e-12, err, err / abs(truth))
+> #
+> #   cbind(absolute = err, relative = relative, truth = truth, est,
+> #         rho = cov2cor(Sigma)[1, 2])
+> # }, simplify = "array")
+> #
+> # # quantiles of the absolute error
+> # apply(abs(errs[, "absolute", ]),
+> #       1, quantile, probs = seq(0, 1, length.out = 21) |> c(.99, .999) |> sort())
+> #
+> # # quantiles of the relative error
+> # apply(abs(errs[, "relative", ]),
+> #       1, quantile, probs = seq(0, 1, length.out = 21) |> c(.99, .999) |> sort())
+> #
+> # # check the computation time for 1000 evaluations
+> # bench::mark(pbvn_grad(mu = mu, Sigma = Sigma, n_rep = 1000))
+> #
+> # # plot the errors versus the integral value
+> # vals <- errs["integral", "truth", ]
+> #
+> # par(mar = c(5, 5, 1, 1))
+> # plot(vals, errs["d mu1", "relative", ], type = "h")
+> # plot(vals, errs["d Sig12", "relative", ], type = "h")
+> # plot(vals, errs["d mu1", "absolute", ], type = "h")
+> # plot(vals, errs["d Sig12", "absolute", ], type = "h")
+> #
+> # rhos <- errs["integral", "rho", ]
+> # plot(rhos, errs["d mu1", "relative", ], type = "h")
+> # plot(rhos, errs["d Sig12", "relative", ], type = "h")
+> #
+> # # may fail with a large absolute correlation coefficient
+> # plot(rhos, errs["integral", "absolute", ], type = "h")
+> # plot(rhos, errs["d mu1", "absolute", ], type = "h")
+> # plot(rhos, errs["d mu2", "absolute", ], type = "h")
+> # plot(rhos, errs["d Sig11", "absolute", ], type = "h")
+> # plot(rhos, errs["d Sig12", "absolute", ], type = "h")
+> # plot(rhos, errs["d Sig22", "absolute", ], type = "h")
+> #
+> #
+> # local({
+> #   keep <- abs(rhos) < .99
+> #   rhos <- rhos[keep]
+> #   errs <- errs[, , keep]
+> #
+> #   plot(rhos, errs["integral", "absolute", ], type = "h")
+> #   plot(rhos, errs["d mu1", "absolute", ], type = "h")
+> #   plot(rhos, errs["d mu2", "absolute", ], type = "h")
+> #   plot(rhos, errs["d Sig11", "absolute", ], type = "h")
+> #   plot(rhos, errs["d Sig12", "absolute", ], type = "h")
+> #   plot(rhos, errs["d Sig22", "absolute", ], type = "h")
+> # })
+> 
+> proc.time()
+   user  system elapsed 
+  6.211   0.037   6.228 
