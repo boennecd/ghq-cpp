@@ -14,7 +14,8 @@ LinkingTo:
     Rcpp,
     RcppArmadillo,
     psqn,
-    testthat
+    testthat,
+    psqn
 Imports: 
     Rcpp
 Suggests: 

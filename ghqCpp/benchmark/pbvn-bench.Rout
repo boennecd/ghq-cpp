@@ -39,6 +39,7 @@ Type 'q()' to quit R.
 > 
 > errs_method0 <- comp_errors(0)
 > errs_method1 <- comp_errors(1)
+> errs_method2 <- comp_errors(2)
 > 
 > # look at stats for the absolute errors
 > abs(errs_method0[c("absolute", "relative"), ]) |>
@@ -46,15 +47,15 @@ Type 'q()' to quit R.
 +         probs = seq(0, 1, length.out = 21) |> c(.99, .999) |> sort())
           absolute     relative
 0%    0.000000e+00 0.000000e+00
-5%    6.938894e-18 6.239938e-16
-10%   5.707240e-17 7.006745e-16
-15%   1.665335e-16 8.060627e-16
-20%   2.775558e-16 9.639042e-16
-25%   4.440892e-16 3.121363e-15
-30%   6.661338e-16 5.561207e-14
-35%   4.668661e-14 2.514029e-12
-40%   3.414602e-12 7.218001e-11
-45%   4.748618e-11 1.092510e-09
+5%    6.928052e-18 6.491388e-16
+10%   6.245005e-17 8.157499e-16
+15%   1.665335e-16 9.058309e-16
+20%   2.775558e-16 1.038239e-15
+25%   4.440892e-16 3.187524e-15
+30%   7.339727e-16 5.546467e-14
+35%   4.669026e-14 2.514529e-12
+40%   3.414535e-12 7.217974e-11
+45%   4.748621e-11 1.092510e-09
 50%   4.387239e-10 8.443700e-09
 55%   3.597645e-09 5.500899e-08
 60%   1.817511e-08 2.529350e-07
@@ -95,6 +96,33 @@ Type 'q()' to quit R.
 99%   2.220446e-16 2.875940e-10
 99.9% 8.881784e-16 1.255796e-06
 100%  1.793353e-15 2.189607e-05
+> abs(errs_method2[c("absolute", "relative"), ]) |>
++   apply(1, quantile,
++         probs = seq(0, 1, length.out = 21) |> c(.99, .999) |> sort())
+          absolute     relative
+0%    0.000000e+00 0.000000e+00
+5%    1.665335e-16 8.542827e-16
+10%   6.661338e-16 2.724855e-15
+15%   1.777245e-13 1.640963e-11
+20%   2.390384e-11 1.867188e-09
+25%   3.878759e-10 2.904848e-08
+30%   2.159420e-09 1.323211e-07
+35%   7.694475e-09 3.275119e-07
+40%   2.179011e-08 7.094066e-07
+45%   5.037198e-08 1.332217e-06
+50%   1.064059e-07 2.106645e-06
+55%   2.084655e-07 3.034882e-06
+60%   3.522037e-07 4.121041e-06
+65%   5.599329e-07 5.263439e-06
+70%   8.008525e-07 6.540153e-06
+75%   1.092834e-06 7.891071e-06
+80%   1.459517e-06 9.342565e-06
+85%   1.880099e-06 1.216530e-05
+90%   2.486431e-06 1.471556e-05
+95%   3.630552e-06 1.738644e-05
+99%   1.459324e-05 2.418392e-05
+99.9% 2.602167e-03 1.658118e-02
+100%  2.955692e-01 9.279346e-01
 > 
 > # compare the computation time
 > set.seed(1)
@@ -104,12 +132,14 @@ Type 'q()' to quit R.
 > bench::mark(
 +   `pbvn method 0` = pbvn(mu, Sigma, method = 0),
 +   `pbvn method 1` = pbvn(mu, Sigma, method = 1),
++   `pbvn method 2` = pbvn(mu, Sigma, method = 2),
 +   check = FALSE)
-# A tibble: 2 × 13
+# A tibble: 3 × 13
   expression         min   median `itr/sec` mem_alloc `gc/sec` n_itr  n_gc
   <bch:expr>    <bch:tm> <bch:tm>     <dbl> <bch:byt>    <dbl> <int> <dbl>
-1 pbvn method 0   6.53µs   6.69µs   142436.        0B     14.2  9999     1
-2 pbvn method 1   1.38µs    1.5µs   596200.        0B      0   10000     0
+1 pbvn method 0   7.15µs   7.37µs   133254.        0B     0    10000     0
+2 pbvn method 1   1.33µs   1.43µs   625945.        0B     0    10000     0
+3 pbvn method 2  11.78µs  11.94µs    82619.        0B     8.26  9999     1
 # … with 5 more variables: total_time <bch:tm>, result <list>, memory <list>,
 #   time <list>, gc <list>
 > 
@@ -209,4 +239,4 @@ Type 'q()' to quit R.
 > 
 > proc.time()
    user  system elapsed 
-  5.661   0.067   5.721 
+  8.277   0.053   8.321 

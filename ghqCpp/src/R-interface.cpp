@@ -164,10 +164,12 @@ double pbvn
     throw std::invalid_argument("invalid mu");
   else if(Sigma.nrow() != 2 || Sigma.ncol() != 2)
     throw std::invalid_argument("invalid Sigma");
-  else if(method < 0 || method > 1)
+  else if(method < 0 || method > 2)
     throw std::invalid_argument("invalid method");
 
   if(method == 0)
     return pbvn<0>(&mu[0], &Sigma[0]);
+  else if(method == 2)
+    return pbvn<2>(&mu[0], &Sigma[0]);
   return pbvn<1>(&mu[0], &Sigma[0]);
 }

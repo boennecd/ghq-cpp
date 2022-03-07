@@ -4,10 +4,213 @@
 #include <RcppArmadillo.h>
 #include <array>
 #include <Rmath.h> // Rf_dnorm4, Rf_pnorm5 etc.
+#ifdef beta
+// we get an error if we do not undefine beta
+#undef beta
+#endif
 #include <algorithm>
 #include <cmath>
+#include <psqn-bfgs.h>
+#include <iterator>
 
 namespace ghqCpp {
+namespace implementation {
+inline double log_exp_add(double const x, double const y){
+  double const max_v{std::max(x, y)},
+               min_v{std::min(x, y)};
+  return max_v + std::log1p(std::exp(min_v - max_v));
+}
+
+using std::begin;
+using std::end;
+
+inline double dnrm_log(double const x){
+  constexpr double sqrt_double_max{4.23992114886859e+153}, // dput(sqrt(.Machine$double.xmax / 10))
+                      log_sqrt_2pi{0.918938533204673};
+  return x > sqrt_double_max ? -std::numeric_limits<double>::infinity()
+                             : -log_sqrt_2pi - x * x / 2;
+}
+
+class tiltin_param_problem final : public PSQN::problem {
+  static constexpr size_t dim{2};
+  double const * const upper_limits;
+  double const choleksy_off_diag;
+
+  /// computes C^T.x setting the diagonal of C to zero
+  void cholesky_product_T(double res[dim], double const x[dim]){
+    res[0] = 0;
+    res[1] = x[0] * choleksy_off_diag;
+  }
+
+  /// computes C.x setting the diagonal of C to zero
+  void cholesky_product(double res[dim], double const x[dim]){
+    res[0] = x[1] * choleksy_off_diag;
+    res[1] = 0;
+  }
+
+  template<bool comp_grad>
+  double eval(double const val[dim + 1],
+              double        gr[dim + 1]) {
+    double const tilt{val[0]};
+    double const * const point{val + 1};
+
+    double choleksy_T_point[dim];
+    cholesky_product_T(choleksy_T_point, point);
+
+    double derivs_pnrm_terms[dim],
+             hess_pnrm_terms[comp_grad ? dim : 0];
+
+    {
+      double const ub_shift{upper_limits[0] - choleksy_T_point[0] - tilt},
+                  denom_log{Rf_pnorm5(ub_shift, 0, 1, 1, 1)},
+                dnrm_ub_log{dnrm_log(ub_shift)},
+                    ratio_ub{std::exp(dnrm_ub_log - denom_log)};
+      derivs_pnrm_terms[0] = -ratio_ub;
+      if constexpr(comp_grad)
+        hess_pnrm_terms[0] =
+          -ub_shift * ratio_ub - derivs_pnrm_terms[0] * derivs_pnrm_terms[0];
+    }
+    {
+      double const ub_shift{upper_limits[1] - choleksy_T_point[1]},
+                  denom_log{Rf_pnorm5(ub_shift, 0, 1, 1, 1)},
+                dnrm_ub_log{dnrm_log(ub_shift)},
+                   ratio_ub{std::exp(dnrm_ub_log - denom_log)};
+      derivs_pnrm_terms[1] = -ratio_ub;
+      if constexpr(comp_grad)
+        hess_pnrm_terms[1] =
+          -ub_shift * ratio_ub - derivs_pnrm_terms[1] * derivs_pnrm_terms[1];
+    }
+
+    double gr_params[4];
+    gr_params[0] = tilt - point[0] + derivs_pnrm_terms[0];
+    gr_params[1] = - point[1] + derivs_pnrm_terms[1];
+
+    double * choleksy_derivs_pnrm_terms = choleksy_T_point;
+    cholesky_product(choleksy_derivs_pnrm_terms, derivs_pnrm_terms);
+
+    gr_params[2] = -tilt + choleksy_derivs_pnrm_terms[0];
+    gr_params[3] = choleksy_derivs_pnrm_terms[1];
+
+    double const out
+      {std::inner_product(begin(gr_params), end(gr_params), gr_params, 0.)};
+
+    if constexpr(comp_grad){
+      // TODO: we can avoid explicitly computing the Hessian
+      constexpr size_t const dim_hess{2 * dim};
+      double hess[dim_hess * dim_hess],
+             diff_mat[dim * dim],
+             diff_mat_outer[dim * dim];
+      std::fill(begin(hess), end(hess), 0);
+      std::fill(begin(diff_mat), end(diff_mat), 0);
+      std::fill(begin(diff_mat_outer), end(diff_mat_outer), 0);
+
+      for(size_t i = 0; i < dim; ++i)
+        hess[i + i *dim_hess] = hess_pnrm_terms[i] + 1;
+
+      diff_mat[dim] = hess_pnrm_terms[1] * choleksy_off_diag;
+
+      for(size_t i = 0; i < dim; ++i){
+        for(size_t j = 0; j < i; ++j){
+          hess[j + dim + i * dim_hess] = diff_mat[j + i * dim];
+          hess[i + (j + dim) * dim_hess] = diff_mat[j + i * dim];
+        }
+        hess[i + dim + i * dim_hess] = -1;
+        hess[i + (i + dim) * dim_hess] = -1;
+      }
+
+      double * const hess_last_block{hess + dim * (1 + dim_hess)};
+      for(size_t i = 0; i < dim; ++i)
+        hess_last_block[i] += diff_mat[i + dim] * choleksy_off_diag;
+
+      std::fill(gr, gr + dim + 1, 0);
+      for(size_t i = 0; i < dim_hess; ++i)
+        for(size_t j = 0; j < dim_hess; ++j){
+          if(j == 1)
+            continue;
+          else
+            gr[j - (j > 0)] += hess[j + i * dim_hess] * gr_params[i];
+        }
+
+      std::for_each(gr, gr + dim + 1, [](double &x) { x *= 2; });
+    }
+
+    return out;
+  }
+
+public:
+  tiltin_param_problem
+    (double const upper_limits[2], double const choleksy_off_diag):
+  upper_limits{upper_limits}, choleksy_off_diag{choleksy_off_diag} { }
+
+  PSQN::psqn_uint size() const {
+    return 3;
+  }
+
+  double func(double const *val) {
+    return eval<false>(val, nullptr);
+  }
+
+  double grad(double const * val,
+              double       * gr){
+    return eval<true>(val, gr);
+  }
+
+  void start_val(double res[3]){
+    double &tilt{res[0]};
+    double * const point{res + 1};
+
+    for(size_t i = 0; i < dim; ++i)
+      point[i] = upper_limits[i] - 1;
+
+    // C^(-T).x that is a forward substitution with a unit diagonal matrix
+    point[1] -= point[0] * choleksy_off_diag;
+    tilt = 0;
+  }
+
+  bool is_interior_solution(double const res[3]) {
+    double const * const point{res + 1};
+    double const choleksy_T_point[]
+      { point[0], point[0] * choleksy_off_diag + point[1] };
+
+    bool out{true};
+    for(size_t i = 0; i < dim && out; ++i)
+      out &= choleksy_T_point[i] <= upper_limits[i];
+
+    return out;
+  }
+};
+
+} // implementation
+
+struct find_tilting_param_res {
+  double tilting;
+  bool success, is_interior;
+};
+
+/**
+ * finds the minimax tilting parameter suggested by
+ *
+ *   https://doi.org/10.1111/rssb.12162
+ *
+ * in the one dimensional case.
+ */
+inline find_tilting_param_res find_tilting_param
+  (double const upper_limits[2], double const choleksy_off_diag,
+   double const rel_eps){
+  double param[3];
+
+  implementation::tiltin_param_problem prob(upper_limits, choleksy_off_diag);
+  prob.start_val(param);
+
+  double wk_mem[PSQN::bfgs_n_wmem(3)];
+  auto res = PSQN::bfgs(prob, param, wk_mem, rel_eps, 1000L);
+  bool const succeeded =
+    res.info == PSQN::info_code::converged ||
+    res.info == PSQN::info_code::max_it_reached;
+  bool const is_interior{prob.is_interior_solution(param)};
+
+  return { succeeded ? param[0] : 0, succeeded, is_interior };
+}
 
 /**
  * computes the integral
@@ -21,12 +224,17 @@ namespace ghqCpp {
  *
  * method = 0 yields a Gauss–Legendre quadrature based solution. This is less
  * precise and slower.
+ *
+ * method = 2 gives the same method as with method = 0 but with the minimax
+ * tilting method suggested by
+ *
+ *   https://doi.org/10.1111/rssb.12162
  */
 template<int method = 1>
 double pbvn(double const *mu, double const *Sigma){
-  static_assert(method == 1 || method == 0, "method is not implemented");
+  static_assert(method >= 0 && method <= 2, "method is not implemented");
 
-  if constexpr (method == 0){
+  if constexpr (method == 0 || method == 2){
     // setup before applying the quadrature rule
     // the, will be, scaled Cholesky decomposition of the covariance matrix
     std::array<double, 3> Sig_chol;
@@ -54,6 +262,14 @@ double pbvn(double const *mu, double const *Sigma){
         (permuted ? -mu[0] : -mu[1]) / Sig_chol[2] };
     Sig_chol[1] /= Sig_chol[2];
 
+    double tilting_param{0};
+    constexpr bool use_tilting{method == 2};
+    if constexpr(use_tilting){
+      auto res = find_tilting_param(ubs.data(), Sig_chol[1], 1e-8);
+      if(res.success)
+        tilting_param = res.tilting;
+    }
+
     /* Gauss–Legendre quadrature nodes scale to the interval [0, 1]. I.e.
      n_nodes <- 50L
      stopifnot(n_nodes %% 2L == 0L)
@@ -64,26 +280,31 @@ double pbvn(double const *mu, double const *Sigma){
      log(gq$weight / 2) |> dput()
      */
     constexpr size_t n_nodes{50};
-    constexpr double nodes[]{0.00056679778996449, 0.00298401528395464, 0.00732295797599708, 0.013567807446654, 0.021694522378596, 0.0316716905275611, 0.043460721672104, 0.0570160102381935, 0.072285115285027, 0.0892089645703321, 0.1077220835498, 0.127752848886966, 0.149223765646589, 0.17205176715728, 0.196148536407525, 0.221420847742675, 0.247770927546268, 0.275096832512981, 0.303292844051217, 0.332249877290281, 0.361855903110234, 0.391996381561979, 0.422554705000927, 0.453412649219957, 0.484450830836406},
-               log_weights[]{-6.53322283985511, -5.6899092746998, -5.24094051811074, -4.93500689320544, -4.70413118267991, -4.51989917726375, -4.36770276999406, -4.23903535290967, -4.12850975550265, -4.03250179468945, -3.94845992500549, -3.87452340980434, -3.80929710971246, -3.75171167066661, -3.70093303857589, -3.65630185246153, -3.61729167704724, -3.5834795327207, -3.55452470170788, -3.53015326113214, -3.51014668424804, -3.49433340776322, -3.48258262178658, -3.47479977715334, -3.47092346849629};
+    constexpr double log_nodes[]{-0.000566958480554094, -0.0029884763343341, -0.00734990245553855, -0.0136606912560569, -0.0219333084120698, -0.0321840865300803, -0.0444334263052349, -0.0587059744760452, -0.0750308297011979, -0.0934417873644116, -0.113977629401458, -0.136682465056404, -0.16160612934026, -0.188804647272732, -0.218340773646487, -0.250284620098857, -0.284714383794182, -0.321717195134542, -0.36139010579344, -0.403841243226125, -0.449191163945253, -0.497574445655356, -0.549141568347433, -0.604061147395087, -0.66252259857298, -0.724739337142984, -0.790952642709519, -0.861436361274494, -0.936502669943514, -1.0165092041089, -1.10186795071833, -1.19305645819858, -1.29063212506562, -1.39525063892062, -1.50769009989463, -1.62888306795255, -1.75995987560697, -1.9023083167218, -2.05765774966192, -2.22820066895138, -2.41677374477853, -2.62713704535509, -2.86442316921556, -3.13589769885905, -3.45233204039424, -3.83069547524975, -4.30005539175986, -4.91674093755178, -5.81448547468502, -7.47550794930057},
+                   log_weights[]{-6.53322283985511, -5.6899092746998, -5.24094051811074, -4.93500689320544, -4.70413118267991, -4.51989917726375, -4.36770276999406, -4.23903535290967, -4.12850975550265, -4.03250179468945, -3.94845992500549, -3.87452340980434, -3.80929710971246, -3.75171167066661, -3.70093303857589, -3.65630185246153, -3.61729167704724, -3.5834795327207, -3.55452470170788, -3.53015326113214, -3.51014668424804, -3.49433340776322, -3.48258262178658, -3.47479977715334, -3.47092346849629, -3.47092346849629, -3.47479977715334, -3.48258262178658, -3.49433340776322, -3.51014668424804, -3.53015326113214, -3.55452470170788, -3.5834795327207, -3.61729167704724, -3.65630185246153, -3.70093303857589, -3.75171167066661, -3.80929710971246, -3.87452340980434, -3.94845992500549, -4.03250179468945, -4.12850975550265, -4.23903535290967, -4.36770276999406, -4.51989917726375, -4.70413118267991, -4.93500689320544, -5.24094051811074, -5.6899092746998, -6.53322283985511};
 
     // do the computation
-    double out{};
-    double const p_outer{Rf_pnorm5(ubs[0], 0, 1, 1, 0)};
-    for(size_t i = 0; i < n_nodes / 2; ++i){
-      auto add_term = [&](bool const flip){
-        double const val{flip ? 1 - nodes[i] : nodes[i]},
-                 z_outer{Rf_qnorm5(val * p_outer, 0, 1, 1, 0)},
-                 p_inner{Rf_pnorm5(ubs[1] - Sig_chol[1] * z_outer, 0, 1, 1, 1)};
+    double out{use_tilting ? -std::numeric_limits<double>::infinity() : 0};
+    double const p_outer{Rf_pnorm5(ubs[0] - tilting_param, 0, 1, 1, 1)};
+    for(size_t i = 0; i < n_nodes; ++i){
+      double const z_outer{
+                     Rf_qnorm5(log_nodes[i] + p_outer, 0, 1, 1, 1) +
+                       tilting_param},
+                   p_inner{
+                     Rf_pnorm5(ubs[1] - Sig_chol[1] * z_outer, 0, 1, 1, 1)};
 
+      if constexpr(method == 2){
+        out = implementation::log_exp_add
+          (out,
+           p_inner + log_weights[i] +
+             ((tilting_param - 2 * z_outer) * tilting_param / 2));
+
+      } else
         out += std::exp(p_inner + log_weights[i]);
-      };
-
-      add_term(false);
-      add_term(true);
     }
 
-    return p_outer * out;
+    return use_tilting ? std::exp(p_outer + out)
+                       : std::exp(p_outer) * out;
   }
 
   double const h{mu[0] / std::sqrt(Sigma[0])},
