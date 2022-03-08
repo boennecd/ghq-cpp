@@ -14,7 +14,38 @@ sapply(seq_len(1e4), \(i){
   }
 
   # compute the error and return
-  est <- pbvn(mu, Sigma, method = method)
+  if(mu[1] > 0 && mu[2] < 0 && Sigma[1,2] < 0){
+    A <- pnorm(mu[1] / sqrt(Sigma[1, 1]))
+    tmp <- Sigma
+    tmp[1, 2] <- tmp[2, 1] <- -tmp[2, 1]
+    B <- pbvn(c(mu[1], -mu[2]), tmp, method = method)
+    est <- 1 - A - B
+
+  } else if(mu[1] < 0 && mu[2] > 0 && Sigma[1,2] < 0){
+    A <- pnorm(mu[2] / sqrt(Sigma[2, 2]))
+    tmp <- Sigma
+    tmp[1, 2] <- tmp[2, 1] <- -tmp[2, 1]
+    B <- pbvn(c(-mu[1], mu[2]), tmp, method = method)
+    est <- 1 - A - B
+
+  } else if(Sigma[1,2] < 0){
+    mu_std <- mu / sqrt(diag(Sigma))
+
+    tmp <- Sigma
+    tmp[1, 2] <- tmp[2, 1] <- -tmp[2, 1]
+    if(mu_std[1] > mu_std[2]){
+      A <- pbvn(c(mu[1], -mu[2]), tmp, method = method)
+      B <- pnorm(mu[1] / sqrt(Sigma[1, 1]))
+      est <- 1 - A - B
+
+    } else {
+      A <- pbvn(c(-mu[1], mu[2]), tmp, method = method)
+      B <- pnorm(mu[2] / sqrt(Sigma[2, 2]))
+      est <- 1 - A - B
+    }
+  } else
+    est <- pbvn(mu, Sigma, method = method)
+
   c(absolute = est - truth, relative = (est - truth) / truth, truth = truth)
 }, simplify = "array")
 
