@@ -27,6 +27,23 @@ double pbvn(double const *mu, double const *Sigma){
   static_assert(method == 1 || method == 0, "method is not implemented");
 
   if constexpr (method == 0){
+    if(Sigma[1] < 0){
+      double const altered_Sigma[]{Sigma[0], -Sigma[1], -Sigma[2], Sigma[3]};
+      double const std_mu[]
+        {mu[0] / std::sqrt(Sigma[0]), mu[1] / std::sqrt(Sigma[3])};
+      if(std_mu[0] > std_mu[1]){
+        double const pnrm_area{Rf_pnorm5(std_mu[0], 0, 1, 1, 0)},
+                     mu_altered[]{mu[0], -mu[1]};
+
+        return 1 - pnrm_area - pbvn<method>(mu_altered, altered_Sigma);
+      }
+
+      double const pnrm_area{Rf_pnorm5(std_mu[1], 0, 1, 1, 0)},
+                mu_altered[]{-mu[0], mu[1]};
+
+      return 1 - pnrm_area - pbvn<method>(mu_altered, altered_Sigma);
+    }
+
     // setup before applying the quadrature rule
     // the, will be, scaled Cholesky decomposition of the covariance matrix
     std::array<double, 3> Sig_chol;
