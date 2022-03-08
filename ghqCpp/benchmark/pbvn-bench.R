@@ -51,16 +51,12 @@ sapply(seq_len(1e4), \(i){
 
 errs_method0 <- comp_errors(0)
 errs_method1 <- comp_errors(1)
-errs_method2 <- comp_errors(2)
 
 # look at stats for the absolute errors
 abs(errs_method0[c("absolute", "relative"), ]) |>
   apply(1, quantile,
         probs = seq(0, 1, length.out = 21) |> c(.99, .999) |> sort())
 abs(errs_method1[c("absolute", "relative"), ]) |>
-  apply(1, quantile,
-        probs = seq(0, 1, length.out = 21) |> c(.99, .999) |> sort())
-abs(errs_method2[c("absolute", "relative"), ]) |>
   apply(1, quantile,
         probs = seq(0, 1, length.out = 21) |> c(.99, .999) |> sort())
 
@@ -72,7 +68,6 @@ mu <- rnorm(2)
 bench::mark(
   `pbvn method 0` = pbvn(mu, Sigma, method = 0),
   `pbvn method 1` = pbvn(mu, Sigma, method = 1),
-  `pbvn method 2` = pbvn(mu, Sigma, method = 2),
   check = FALSE)
 
 # # check the time to do a 1000 evaluations (assuming that the optimizer does not
