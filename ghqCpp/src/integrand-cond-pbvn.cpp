@@ -81,7 +81,7 @@ double cond_pbvn<comp_grad>::log_integrand_grad
     for(size_t i = 0; i < n_vars(); ++i)
         mu[k] += V(k, i) * point[i];
 
-  double const fn{pbvn_grad<1, false>(mu, Psi.memptr(), gr_inter)};
+  double const fn{pbvn_grad<false>(mu, Psi.memptr(), gr_inter)};
   std::fill(grad, grad + n_vars(), 0);
   for(size_t k = 0; k < 2; ++k)
     for(size_t i = 0; i < n_vars(); ++i)
@@ -101,7 +101,7 @@ void cond_pbvn<comp_grad>::log_integrand_hess
     for(size_t i = 0; i < n_vars(); ++i)
       mu[k] += V(k, i) * point[i];
 
-  double const fn{pbvn_grad<1, false>(mu, Psi.memptr(), gr_inter)};
+  double const fn{pbvn_grad<false>(mu, Psi.memptr(), gr_inter)};
   pbvn_hess(mu, Psi.memptr(), hess_inter);
   std::for_each(hess_inter, hess_inter + 4, [&](double &x){  x /= fn; });
   std::for_each(gr_inter, gr_inter + 2, [&](double &x){  x /= fn; });

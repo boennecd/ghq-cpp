@@ -78,7 +78,8 @@ errs <- sapply(seq_len(1e4), \(i){
   relative = ifelse(abs(truth) < 1e-12, err, err / abs(truth))
 
   cbind(absolute = err, relative = relative, truth = truth, est,
-        rho = cov2cor(Sigma)[1, 2])
+        rho = cov2cor(Sigma)[1, 2], mu_std1 = mu[1] / sqrt(Sigma[1, 1]),
+        mu_std2 = mu[2] / sqrt(Sigma[2, 2]))
 }, simplify = "array")
 
 # quantiles of the absolute error
@@ -113,6 +114,12 @@ bench::mark(pbvn_grad(mu = mu, Sigma = Sigma))
 # plot(rhos, errs["d Sig12", "absolute", ], type = "h")
 # plot(rhos, errs["d Sig22", "absolute", ], type = "h")
 #
+# vals <- errs["integral", "mu_std1", ]
+# plot(rhos, errs["d mu1", "relative", ], type = "h")
+# plot(rhos, errs["d mu2", "relative", ], type = "h")
+# vals <- errs["integral", "mu_std2", ]
+# plot(rhos, errs["d mu1", "relative", ], type = "h")
+# plot(rhos, errs["d mu2", "relative", ], type = "h")
 #
 # local({
 #   keep <- abs(rhos) < .99

@@ -8,6 +8,13 @@
 #include <cmath>
 
 namespace ghqCpp {
+inline double dnrm_log(double const x){
+  // dput(sqrt(.Machine$double.xmax / 10))
+  constexpr double sqrt_double_max{4.23992114886859e+153},
+  log_sqrt_2pi{0.918938533204673};
+  return x > sqrt_double_max ? -std::numeric_limits<double>::infinity()
+                             : -log_sqrt_2pi - x * x / 2;
+}
 
 /**
  * computes the integral
@@ -224,9 +231,142 @@ double pbvn(double const *mu, double const *Sigma){
  * the derivatives w.r.t. Sigma are stored as a 2 x 2 matrix ignoring the
  * symmetry. Thus, a 6D array needs to be passed for the gradient.
  */
-template<int method = 1, bool comp_d_Sig = true>
+template<bool comp_d_Sig = true>
 double pbvn_grad(double const *mu, double const *Sigma, double *grad){
-  static_assert(method == 1 || method == 0, "method is not implemented");
+  if(Sigma[1] < 0 && mu[0] < 0 && mu[1] < 0){
+    double const stds[]{std::sqrt(Sigma[0]), std::sqrt(Sigma[3])};
+    // double const std_mu[]{mu[0] / stds[0], mu[1] / stds[1]};
+    double inter_gr[comp_d_Sig ? 6 : 2];
+    std::fill(grad, grad + 6, 0);
+
+    double const altered_Sigma[]{Sigma[0], -Sigma[1], -Sigma[2], Sigma[3]};
+
+    double out{1};
+    {
+      double const mu_altered[]{-mu[0], -mu[1]};
+      out -= pbvn_grad<comp_d_Sig>(mu_altered, Sigma, inter_gr);
+      grad[0] += inter_gr[0];
+      grad[1] += inter_gr[1];
+      if constexpr(comp_d_Sig){
+        grad[2] -= inter_gr[2];
+        grad[3] -= inter_gr[3];
+        grad[4] -= inter_gr[4];
+        grad[5] -= inter_gr[5];
+      }
+    }
+    {
+      double const mu_altered[]{mu[0], -mu[1]};
+      out -= pbvn_grad<comp_d_Sig>(mu_altered, altered_Sigma, inter_gr);
+      grad[0] -= inter_gr[0];
+      grad[1] += inter_gr[1];
+      if constexpr(comp_d_Sig){
+        grad[2] -= inter_gr[2];
+        grad[3] += inter_gr[3];
+        grad[4] += inter_gr[4];
+        grad[5] -= inter_gr[5];
+      }
+
+        // double const pnrm_area{Rf_pnorm5(std_mu[0], 0, 1, 1, 0)},
+        //              d_pnrm_area{std::exp(dnrm_log(std_mu[0]))};
+        // out -= pnrm_area;
+        // grad[0] -= d_pnrm_area / stds[0];
+        // if constexpr(comp_d_Sig)
+        //   grad[2] += d_pnrm_area * std_mu[0] / (2 * Sigma[0]);
+    }
+    {
+      double const mu_altered[]{-mu[0], mu[1]};
+      out -= pbvn_grad<comp_d_Sig>(mu_altered, altered_Sigma, inter_gr);
+      grad[0] += inter_gr[0];
+      grad[1] -= inter_gr[1];
+      if constexpr(comp_d_Sig){
+        grad[2] -= inter_gr[2];
+        grad[3] += inter_gr[3];
+        grad[4] += inter_gr[4];
+        grad[5] -= inter_gr[5];
+      }
+
+      // double const pnrm_area{Rf_pnorm5(std_mu[1], 0, 1, 1, 0)},
+      //            d_pnrm_area{std::exp(dnrm_log(std_mu[1]))};
+      // out -= pnrm_area;
+      // grad[1] -= d_pnrm_area / stds[1];
+      // if constexpr(comp_d_Sig)
+      //   grad[5] += d_pnrm_area * std_mu[1] / (2 * Sigma[3]);
+    }
+
+    // std::for_each(grad, grad + (comp_d_Sig ? 6 : 2), [](double &x) { x /= 2; });
+    // return 1 - out / 2;
+    return out;
+
+    // if(std_mu[0] > 0 && std_mu[1] > 0){
+    //   double const mu_altered[]{-mu[0], -mu[1]};
+    //   double out{1 + pbvn_grad<comp_d_Sig>(mu_altered, Sigma, grad)};
+    //
+    //   grad[0] *= -1;
+    //   grad[1] *= -1;
+    //
+    //   double const pnrm_area_1{Rf_pnorm5(std_mu[0], 0, 1, 1, 0)},
+    //                pnrm_area_2{Rf_pnorm5(std_mu[1], 0, 1, 1, 0)},
+    //                d_pnrm_area_1{std::exp(dnrm_log(std_mu[0]))},
+    //                d_pnrm_area_2{std::exp(dnrm_log(std_mu[1]))};
+    //
+    //   grad[0] -= d_pnrm_area_1 / stds[0];
+    //   grad[1] -= d_pnrm_area_2 / stds[1];
+    //   if constexpr(comp_d_Sig){
+    //     grad[2] += d_pnrm_area_1 * std_mu[0] / (2 * Sigma[0]);
+    //     grad[5] += d_pnrm_area_2 * std_mu[1] / (2 * Sigma[3]);
+    //   }
+    //
+    //   return out - pnrm_area_1 - pnrm_area_2;
+    // }
+
+      // if(std_mu[0] > std_mu[1]){
+      //   // double const altered_Sigma[]{Sigma[0], -Sigma[1], -Sigma[2], Sigma[3]};
+      //   // double const std_mu[]
+      //   // {mu[0] / std::sqrt(Sigma[0]), mu[1] / std::sqrt(Sigma[3])};
+      //   // if(std_mu[0] > std_mu[1]){
+      //   //   double const pnrm_area{Rf_pnorm5(std_mu[0], 0, 1, 1, 0)},
+      //   //   mu_altered[]{mu[0], -mu[1]};
+      //   //
+      //   //   return 1 - pnrm_area - pbvn<method>(mu_altered, altered_Sigma);
+      //
+      //   double const mu_altered[]{mu[0], -mu[1]};
+      //   double out
+      //     {1 - pbvn_grad<comp_d_Sig>(mu_altered, altered_Sigma, grad)};
+      //   grad[0] *= -1;
+      //   if constexpr(comp_d_Sig){
+      //     grad[2] *= -1;
+      //     grad[5] *= -1;
+      //   }
+      //
+      //   double const pnrm_area{Rf_pnorm5(std_mu[0], 0, 1, 1, 0)},
+      //                d_pnrm_area{std::exp(dnrm_log(std_mu[0]))};
+      //   out -= pnrm_area;
+      //   grad[0] -= d_pnrm_area / stds[0];
+      //   if constexpr(comp_d_Sig)
+      //     grad[2] += d_pnrm_area * std_mu[0] / (2 * Sigma[0]);
+      //
+      //   return out;
+      // }
+      //
+      // double const mu_altered[]{-mu[0], mu[1]};
+      // double out
+      //   {1 - pbvn_grad<comp_d_Sig>(mu_altered, altered_Sigma, grad)};
+      // grad[1] *= -1;
+      // if constexpr(comp_d_Sig){
+      //   grad[2] *= -1;
+      //   grad[5] *= -1;
+      // }
+      //
+      // double const pnrm_area{Rf_pnorm5(std_mu[1], 0, 1, 1, 0)},
+      //              d_pnrm_area{std::exp(dnrm_log(std_mu[1]))};
+      // out -= pnrm_area;
+      // grad[1] -= d_pnrm_area / stds[1];
+      // if constexpr(comp_d_Sig)
+      //   grad[5] += d_pnrm_area * std_mu[1] / (2 * Sigma[3]);
+      //
+      // return out;
+  }
+
   std::array<double, 3> Sig_chol;
 
   double const sig1{std::sqrt(Sigma[0])},
@@ -257,7 +397,7 @@ double pbvn_grad(double const *mu, double const *Sigma, double *grad){
                  weights[]{0.00145431127657757, 0.00145431127657757, 0.0033798995978727, 0.0033798995978727, 0.00529527419182548, 0.00529527419182548, 0.00719041138074279, 0.00719041138074279, 0.0090577803567447, 0.0090577803567447, 0.0108901215850624, 0.0108901215850624, 0.0126803367850062, 0.0126803367850062, 0.0144214967902676, 0.0144214967902676, 0.016106864111789, 0.016106864111789, 0.0177299178075731, 0.0177299178075731, 0.0192843783062938, 0.0192843783062938, 0.0207642315450738, 0.0207642315450738, 0.0221637521694016, 0.0221637521694016, 0.0234775256519742, 0.0234775256519742, 0.0247004692247332, 0.0247004692247332, 0.0258278515347906, 0.0258278515347906, 0.0268553109444981, 0.0268553109444981, 0.0277788724031063, 0.0277788724031063, 0.0285949628238642, 0.0285949628238642, 0.0293004249066112, 0.0293004249066112, 0.0298925293521327, 0.0298925293521327, 0.0303689854208851, 0.0303689854208851, 0.0307279497951583, 0.0307279497951583, 0.0309680337103416, 0.0309680337103416, 0.0310883083276736, 0.0310883083276736};
 
   // do the computation
-  double out{};
+  double const out{pbvn<1>(mu, Sigma)};
   std::fill(grad, comp_d_Sig ? grad + 6 : grad + 2, 0);
   double * const d_mu{grad},
          * const d_Sig{comp_d_Sig ? grad + 2 : nullptr};
@@ -267,8 +407,6 @@ double pbvn_grad(double const *mu, double const *Sigma, double *grad){
     double const z_outer{Rf_qnorm5(nodes[i] * p_outer, 0, 1, 1, 0)},
              u_lim_inner{ubs[1] - Sig_12_scaled * z_outer},
                  p_inner{Rf_pnorm5(u_lim_inner, 0, 1, 1, 0)};
-    if(method == 0)
-      out += p_inner * weights[i];
 
     double const g1_fac{z_outer * p_inner},
       dnorm_u_lim_inner{Rf_dnorm4(u_lim_inner, 0, 1, 0)},
@@ -285,11 +423,6 @@ double pbvn_grad(double const *mu, double const *Sigma, double *grad){
       d_Sig[3] += weights[i] * trunc_sq_moment_scaled;
     }
   }
-
-  if(method == 1)
-    out = pbvn<method>(mu, Sigma);
-  else
-    out *= p_outer;
 
   // handle the derivatives w.r.t. mu
   std::for_each(d_mu, d_mu + 2, [&](double &x){ x *= p_outer; });
@@ -329,10 +462,9 @@ double pbvn_grad(double const *mu, double const *Sigma, double *grad){
 }
 
 /// computes the Hessian w.r.t. mu. Thus, a 4D array has to be passed
-template<int method = 1>
-void pbvn_hess(double const *mu, double const *Sigma, double *hess){
+inline void pbvn_hess(double const *mu, double const *Sigma, double *hess){
   double gr[6];
-  pbvn_grad<method, true>(mu, Sigma, gr);
+  pbvn_grad<true>(mu, Sigma, gr);
 
   arma::mat Sig(const_cast<double *>(Sigma), 2, 2, false);
   for(unsigned j = 0; j < 2; ++j)
