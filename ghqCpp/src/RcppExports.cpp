@@ -110,6 +110,18 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// pbvn_grad
+Rcpp::NumericVector pbvn_grad(Rcpp::NumericVector const mu, Rcpp::NumericMatrix const Sigma, int const method);
+RcppExport SEXP _ghqCpp_pbvn_grad(SEXP muSEXP, SEXP SigmaSEXP, SEXP methodSEXP) {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    Rcpp::traits::input_parameter< Rcpp::NumericVector const >::type mu(muSEXP);
+    Rcpp::traits::input_parameter< Rcpp::NumericMatrix const >::type Sigma(SigmaSEXP);
+    Rcpp::traits::input_parameter< int const >::type method(methodSEXP);
+    rcpp_result_gen = Rcpp::wrap(pbvn_grad(mu, Sigma, method));
+    return rcpp_result_gen;
+END_RCPP
+}
 
 RcppExport SEXP run_testthat_tests(SEXP);
 
@@ -120,6 +132,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_ghqCpp_mixed_mult_logit_n_probit_term", (DL_FUNC) &_ghqCpp_mixed_mult_logit_n_probit_term, 10},
     {"_ghqCpp_mixed_mult_logit_n_cond_pbvn", (DL_FUNC) &_ghqCpp_mixed_mult_logit_n_cond_pbvn, 10},
     {"_ghqCpp_pbvn", (DL_FUNC) &_ghqCpp_pbvn, 3},
+    {"_ghqCpp_pbvn_grad", (DL_FUNC) &_ghqCpp_pbvn_grad, 3},
     {"run_testthat_tests", (DL_FUNC) &run_testthat_tests, 1},
     {NULL, NULL, 0}
 };
