@@ -25,11 +25,13 @@
 *   R   REAL, correlation coefficient
 *   LG  INTEGER, number of Gauss Rule Points and Weights
 *
-      DOUBLE PRECISION BVN, SH, SK, R, ZERO, TWOPI
+*      DOUBLE PRECISION BVN, SH, SK, R, ZERO, TWOPI
+      DOUBLE PRECISION BVN, SH, SK, R, TWOPI
       INTEGER I, LG, NG
-      PARAMETER ( ZERO = 0, TWOPI = 6.283185307179586D0 )
+      PARAMETER ( TWOPI = 6.283185307179586D0 )
       DOUBLE PRECISION X(10,1), W(10,1), AS, A, B, C, D, RS, XS
-      DOUBLE PRECISION MVPHI, SN, ASR, H, K, BS, HS, HK
+*      DOUBLE PRECISION MVPHI, SN, ASR, H, K, BS, HS, HK
+      DOUBLE PRECISION MVPHI, H, K, BS, HK
 *     Gauss Legendre Points and Weights, N =  6
 *      DATA ( W(I,1), X(I,1), I = 1, 3 ) /
 *     *  0.1713244923791705D+00,-0.9324695142031522D+00,

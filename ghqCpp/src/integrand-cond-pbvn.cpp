@@ -35,7 +35,7 @@ void cond_pbvn<comp_grad>::eval
 
   double gr[6];
   for(size_t j = 0; j < n_points; ++j){
-    outs[j] = pbvn_grad(mu + j * 2, Psi.memptr(), gr);
+    outs[j] = pbvn_grad<1>(mu + j * 2, Psi.memptr(), gr);
 
     // handle the derivatives w.r.t. eta and Psi
     double const * const d_eta{gr},

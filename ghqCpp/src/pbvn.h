@@ -251,8 +251,6 @@ double pbvn_grad(double const *mu, double const *Sigma, double *grad){
   }
 
   if(Sigma[1] < 0 && mu[0] < 0 && mu[1] < 0){
-    double const stds[]{std::sqrt(Sigma[0]), std::sqrt(Sigma[3])};
-    // double const std_mu[]{mu[0] / stds[0], mu[1] / stds[1]};
     double inter_gr[comp_d_Sig ? 6 : 2];
     std::fill(grad, grad + (comp_d_Sig ? 6 : 2), 0);
 
@@ -283,12 +281,6 @@ double pbvn_grad(double const *mu, double const *Sigma, double *grad){
         grad[5] -= inter_gr[5];
       }
 
-        // double const pnrm_area{Rf_pnorm5(std_mu[0], 0, 1, 1, 0)},
-        //              d_pnrm_area{std::exp(dnrm_log(std_mu[0]))};
-        // out -= pnrm_area;
-        // grad[0] -= d_pnrm_area / stds[0];
-        // if constexpr(comp_d_Sig)
-        //   grad[2] += d_pnrm_area * std_mu[0] / (2 * Sigma[0]);
     }
     {
       double const mu_altered[]{-mu[0], mu[1]};
@@ -302,86 +294,9 @@ double pbvn_grad(double const *mu, double const *Sigma, double *grad){
         grad[5] -= inter_gr[5];
       }
 
-      // double const pnrm_area{Rf_pnorm5(std_mu[1], 0, 1, 1, 0)},
-      //            d_pnrm_area{std::exp(dnrm_log(std_mu[1]))};
-      // out -= pnrm_area;
-      // grad[1] -= d_pnrm_area / stds[1];
-      // if constexpr(comp_d_Sig)
-      //   grad[5] += d_pnrm_area * std_mu[1] / (2 * Sigma[3]);
     }
 
-    // std::for_each(grad, grad + (comp_d_Sig ? 6 : 2), [](double &x) { x /= 2; });
-    // return 1 - out / 2;
     return out;
-
-    // if(std_mu[0] > 0 && std_mu[1] > 0){
-    //   double const mu_altered[]{-mu[0], -mu[1]};
-    //   double out{1 + pbvn_grad<comp_d_Sig>(mu_altered, Sigma, grad)};
-    //
-    //   grad[0] *= -1;
-    //   grad[1] *= -1;
-    //
-    //   double const pnrm_area_1{Rf_pnorm5(std_mu[0], 0, 1, 1, 0)},
-    //                pnrm_area_2{Rf_pnorm5(std_mu[1], 0, 1, 1, 0)},
-    //                d_pnrm_area_1{std::exp(dnrm_log(std_mu[0]))},
-    //                d_pnrm_area_2{std::exp(dnrm_log(std_mu[1]))};
-    //
-    //   grad[0] -= d_pnrm_area_1 / stds[0];
-    //   grad[1] -= d_pnrm_area_2 / stds[1];
-    //   if constexpr(comp_d_Sig){
-    //     grad[2] += d_pnrm_area_1 * std_mu[0] / (2 * Sigma[0]);
-    //     grad[5] += d_pnrm_area_2 * std_mu[1] / (2 * Sigma[3]);
-    //   }
-    //
-    //   return out - pnrm_area_1 - pnrm_area_2;
-    // }
-
-      // if(std_mu[0] > std_mu[1]){
-      //   // double const altered_Sigma[]{Sigma[0], -Sigma[1], -Sigma[2], Sigma[3]};
-      //   // double const std_mu[]
-      //   // {mu[0] / std::sqrt(Sigma[0]), mu[1] / std::sqrt(Sigma[3])};
-      //   // if(std_mu[0] > std_mu[1]){
-      //   //   double const pnrm_area{Rf_pnorm5(std_mu[0], 0, 1, 1, 0)},
-      //   //   mu_altered[]{mu[0], -mu[1]};
-      //   //
-      //   //   return 1 - pnrm_area - pbvn<method>(mu_altered, altered_Sigma);
-      //
-      //   double const mu_altered[]{mu[0], -mu[1]};
-      //   double out
-      //     {1 - pbvn_grad<comp_d_Sig>(mu_altered, altered_Sigma, grad)};
-      //   grad[0] *= -1;
-      //   if constexpr(comp_d_Sig){
-      //     grad[2] *= -1;
-      //     grad[5] *= -1;
-      //   }
-      //
-      //   double const pnrm_area{Rf_pnorm5(std_mu[0], 0, 1, 1, 0)},
-      //                d_pnrm_area{std::exp(dnrm_log(std_mu[0]))};
-      //   out -= pnrm_area;
-      //   grad[0] -= d_pnrm_area / stds[0];
-      //   if constexpr(comp_d_Sig)
-      //     grad[2] += d_pnrm_area * std_mu[0] / (2 * Sigma[0]);
-      //
-      //   return out;
-      // }
-      //
-      // double const mu_altered[]{-mu[0], mu[1]};
-      // double out
-      //   {1 - pbvn_grad<comp_d_Sig>(mu_altered, altered_Sigma, grad)};
-      // grad[1] *= -1;
-      // if constexpr(comp_d_Sig){
-      //   grad[2] *= -1;
-      //   grad[5] *= -1;
-      // }
-      //
-      // double const pnrm_area{Rf_pnorm5(std_mu[1], 0, 1, 1, 0)},
-      //              d_pnrm_area{std::exp(dnrm_log(std_mu[1]))};
-      // out -= pnrm_area;
-      // grad[1] -= d_pnrm_area / stds[1];
-      // if constexpr(comp_d_Sig)
-      //   grad[5] += d_pnrm_area * std_mu[1] / (2 * Sigma[3]);
-      //
-      // return out;
   }
 
   std::array<double, 3> Sig_chol;
@@ -414,8 +329,7 @@ double pbvn_grad(double const *mu, double const *Sigma, double *grad){
                  weights[]{0.00145431127657757, 0.00145431127657757, 0.0033798995978727, 0.0033798995978727, 0.00529527419182548, 0.00529527419182548, 0.00719041138074279, 0.00719041138074279, 0.0090577803567447, 0.0090577803567447, 0.0108901215850624, 0.0108901215850624, 0.0126803367850062, 0.0126803367850062, 0.0144214967902676, 0.0144214967902676, 0.016106864111789, 0.016106864111789, 0.0177299178075731, 0.0177299178075731, 0.0192843783062938, 0.0192843783062938, 0.0207642315450738, 0.0207642315450738, 0.0221637521694016, 0.0221637521694016, 0.0234775256519742, 0.0234775256519742, 0.0247004692247332, 0.0247004692247332, 0.0258278515347906, 0.0258278515347906, 0.0268553109444981, 0.0268553109444981, 0.0277788724031063, 0.0277788724031063, 0.0285949628238642, 0.0285949628238642, 0.0293004249066112, 0.0293004249066112, 0.0298925293521327, 0.0298925293521327, 0.0303689854208851, 0.0303689854208851, 0.0307279497951583, 0.0307279497951583, 0.0309680337103416, 0.0309680337103416, 0.0310883083276736, 0.0310883083276736};
 
   // do the computation
-  double const out{pbvn<1>(mu, Sigma)},
-           out_log{std::log(out)};
+  double const out{pbvn<1>(mu, Sigma)};
   std::fill(grad, grad + (comp_d_Sig ? 6 : 2), 0);
   double * const d_mu{grad},
          * const d_Sig{comp_d_Sig ? grad + 2 : nullptr};
