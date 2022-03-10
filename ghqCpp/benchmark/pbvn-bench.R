@@ -39,6 +39,30 @@ bench::mark(
   `pbvn method 1` = pbvn(mu, Sigma, method = 1),
   check = FALSE)
 
+# more extreme
+comp_errors_extreme <- \(method)
+sapply(seq_len(1e4), \(i){
+  set.seed(i)
+  truth <- -Inf
+  while(!is.finite(truth) || truth > 1e-12 && truth < 1e-34){
+    Sigma <- rWishart(1, 2, diag(2)) |> drop()
+    mu <- rnorm(2)
+    truth <- pmvnorm(upper = numeric(2), mean = mu, sigma = Sigma)
+  }
+
+  # compute the error and return
+  est <- pbvn(mu, Sigma, method = method)
+
+  c(absolute = est - truth, relative = (est - truth) / (truth + 1e-100),
+    truth = truth)
+}, simplify = "array")
+
+errs_method_extreme <- comp_errors_extreme(1)
+
+abs(errs_method_extreme[c("absolute", "relative"), ]) |>
+  apply(1, quantile,
+        probs = seq(0, 1, length.out = 21) |> c(.99, .999) |> sort())
+
 # check the gradient
 library(numDeriv)
 errs <- sapply(seq_len(1e4), \(i){

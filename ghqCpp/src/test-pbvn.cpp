@@ -64,4 +64,17 @@ context("pbvn functions works as expected") {
          expect_true
          (std::abs(hess[i] - true_hess[i]) < std::abs(true_hess[i]) * 1e-4);
    }
+
+   test_that("pbvn works in a special extreme case") {
+      /*
+       Sigma <- c(0.28100000000000003, -0.39800000000000002, -0.39800000000000002, 0.623) |> matrix(2)
+       mu <- c(2.1256907051178309, -0.87838136502927344)
+       mvtnorm::pmvnorm(upper = -mu, sigma = Sigma) |> dput()
+       */
+      constexpr double mu_special[]{2.1256907051178309, -0.87838136502927344},
+                    Sigma_special[]{0.28100000000000003, -0.39800000000000002, -0.39800000000000002, 0.623},
+                      truth_special{4.0401649079904e-24};
+      expect_true(
+         std::abs(pbvn<1>(mu_special, Sigma_special) - truth_special) < truth_special * 1e-8);
+   }
 }

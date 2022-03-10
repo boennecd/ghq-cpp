@@ -4,8 +4,13 @@
 #include <RcppArmadillo.h>
 #include <array>
 #include <Rmath.h> // Rf_dnorm4, Rf_pnorm5 etc.
+#include <R_ext/RS.h> // for F77_NAME and F77_CALL
 #include <algorithm>
 #include <cmath>
+
+extern "C" {
+  double F77_NAME(mvbvu)(double const *dh, double const *dk, double const *r);
+}
 
 namespace ghqCpp {
 inline double dnrm_log(double const x){
@@ -154,64 +159,12 @@ double pbvn(double const *mu, double const *Sigma){
     return wo_border_correction(nodes6, weights6, 6);
   else if(std::abs(rho) <= .75)
     return wo_border_correction(nodes12, weights12, 12);
-  else if(std::abs(rho) <= .95)
+  else if(std::abs(rho) <= 0.925)
     return wo_border_correction(nodes20, weights20, 20);
 
-  // handle the large absolute correlation
-
-  // computes the indefinite integral
-  //   int exp(-b^2/2x^2)(1 + c * x^2 * (1 + d * x^2))
-  // TODO: can likely be done a lot smarter
-  auto taylor_term = [&](double const x, double const b, double const c,
-                         double const d){
-    double const x2{x * x},
-                 b2{b * b},
-                 b4{b2 * b2};
-    double out{2 * x * std::exp(-b2 / (2 * x2))};
-    out *= (b4 * c * d - b2 * c * (d * x2 + 5) +
-      c * x2 * (3 * d * x2 + 5) + 15);
-
-    constexpr double sqrt2pi{2.506628274631};
-    out += sqrt2pi * b * (b4 * c * d - 5 * b2 * c + 15) *
-      (2 * pnrm(b / x) - 1);
-
-    return out / 30;
-  };
-
-  double const s{rho > 0 ? 1. : -1.},
-              ub{std::sqrt(1 - rho * rho)},
-             shk{s * h * k};
-
-  double const numerator{-(h - s * k) * (h - s * k) / 2},
-           exp_m_shk_d_2{std::exp(-shk / 2)};
-
-  double out{};
-  for(size_t i = 0; i < 20; ++i){
-    double const x{nodes20[i] * ub},
-                x2{x * x};
-    double tay{1 + (12 - shk) * x2 / 16};
-    tay *= (4 - shk) * x2 / 8;
-    tay += 1;
-    tay *= exp_m_shk_d_2;
-
-    double const sqrt_1_m_x2{std::sqrt(1 - x2)},
-                 fn{std::exp(-shk/(1 + sqrt_1_m_x2)) / sqrt_1_m_x2};
-
-    out += weights20[i] * std::exp(numerator / x2) * (fn - tay);
-  }
-  out *= ub;
-
-  double const b{std::abs(h - s * k)},
-               c{(4 - shk) / 8},
-               d{(12 - shk) / 16};
-
-  out +=
-    exp_m_shk_d_2 * (taylor_term(ub, b, c, d) - taylor_term(0, b, c, d));
-  out *= (-s / (2 * M_PI));
-  out += s > 0
-    ? pnrm(-std::max(h, k))
-    : std::max(0., pnrm(-h) - pnrm(k));
-  return out;
+  // handle the large absolute correlation. My attempt to implement this was
+  // not as numerically stable as Genz
+  return F77_CALL(mvbvu)(&h, &k, &rho);
 }
 
 /**
@@ -237,7 +190,7 @@ double pbvn_grad(double const *mu, double const *Sigma, double *grad){
     double const stds[]{std::sqrt(Sigma[0]), std::sqrt(Sigma[3])};
     // double const std_mu[]{mu[0] / stds[0], mu[1] / stds[1]};
     double inter_gr[comp_d_Sig ? 6 : 2];
-    std::fill(grad, grad + 6, 0);
+    std::fill(grad, grad + (comp_d_Sig ? 6 : 2), 0);
 
     double const altered_Sigma[]{Sigma[0], -Sigma[1], -Sigma[2], Sigma[3]};
 
@@ -397,8 +350,9 @@ double pbvn_grad(double const *mu, double const *Sigma, double *grad){
                  weights[]{0.00145431127657757, 0.00145431127657757, 0.0033798995978727, 0.0033798995978727, 0.00529527419182548, 0.00529527419182548, 0.00719041138074279, 0.00719041138074279, 0.0090577803567447, 0.0090577803567447, 0.0108901215850624, 0.0108901215850624, 0.0126803367850062, 0.0126803367850062, 0.0144214967902676, 0.0144214967902676, 0.016106864111789, 0.016106864111789, 0.0177299178075731, 0.0177299178075731, 0.0192843783062938, 0.0192843783062938, 0.0207642315450738, 0.0207642315450738, 0.0221637521694016, 0.0221637521694016, 0.0234775256519742, 0.0234775256519742, 0.0247004692247332, 0.0247004692247332, 0.0258278515347906, 0.0258278515347906, 0.0268553109444981, 0.0268553109444981, 0.0277788724031063, 0.0277788724031063, 0.0285949628238642, 0.0285949628238642, 0.0293004249066112, 0.0293004249066112, 0.0298925293521327, 0.0298925293521327, 0.0303689854208851, 0.0303689854208851, 0.0307279497951583, 0.0307279497951583, 0.0309680337103416, 0.0309680337103416, 0.0310883083276736, 0.0310883083276736};
 
   // do the computation
-  double const out{pbvn<1>(mu, Sigma)};
-  std::fill(grad, comp_d_Sig ? grad + 6 : grad + 2, 0);
+  double const out{pbvn<1>(mu, Sigma)},
+           out_log{std::log(out)};
+  std::fill(grad, grad + (comp_d_Sig ? 6 : 2), 0);
   double * const d_mu{grad},
          * const d_Sig{comp_d_Sig ? grad + 2 : nullptr};
   double const p_outer{Rf_pnorm5(ubs[0], 0, 1, 1, 0)};
