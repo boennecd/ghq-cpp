@@ -19,7 +19,7 @@ Type 'q()' to quit R.
 
 > library(mvtnorm)
 > library(ghqCpp)
-> 
+>
 > # compute relative errors for different configurations with the two
 > # implementations
 > comp_errors <- \(method)
@@ -31,15 +31,15 @@ Type 'q()' to quit R.
 +     mu <- rnorm(2)
 +     truth <- pmvnorm(upper = numeric(2), mean = mu, sigma = Sigma)
 +   }
-+ 
++
 +   # compute the error and return
 +   est <- pbvn(mu, Sigma, method = method)
 +   c(absolute = est - truth, relative = (est - truth) / truth, truth = truth)
 + }, simplify = "array")
-> 
+>
 > errs_method0 <- comp_errors(0)
 > errs_method1 <- comp_errors(1)
-> 
+>
 > # look at stats for the absolute errors
 > abs(errs_method0[c("absolute", "relative"), ]) |>
 +   apply(1, quantile,
@@ -95,12 +95,12 @@ Type 'q()' to quit R.
 99%   2.220446e-16 1.368444e-12
 99.9% 2.775558e-16 1.830769e-08
 100%  6.255847e-16 3.419518e-07
-> 
+>
 > # compare the computation time
 > set.seed(1)
 > Sigma <- rWishart(1, 2, diag(2)) |> drop()
 > mu <- rnorm(2)
-> 
+>
 > bench::mark(
 +   `pbvn method 0` = pbvn(mu, Sigma, method = 0),
 +   `pbvn method 1` = pbvn(mu, Sigma, method = 1),
@@ -112,7 +112,7 @@ Type 'q()' to quit R.
 2 pbvn method 1   1.39µs    1.5µs   624718.        0B      0   10000     0
 # … with 5 more variables: total_time <bch:tm>, result <list>, memory <list>,
 #   time <list>, gc <list>
-> 
+>
 > # more extreme
 > comp_errors_extreme <- \(method)
 + sapply(seq_len(1e4), \(i){
@@ -123,16 +123,16 @@ Type 'q()' to quit R.
 +     mu <- rnorm(2)
 +     truth <- pmvnorm(upper = numeric(2), mean = mu, sigma = Sigma)
 +   }
-+ 
++
 +   # compute the error and return
 +   est <- pbvn(mu, Sigma, method = method)
-+ 
++
 +   c(absolute = est - truth, relative = (est - truth) / (truth + 1e-100),
 +     truth = truth)
 + }, simplify = "array")
-> 
+>
 > errs_method_extreme <- comp_errors_extreme(1)
-> 
+>
 > abs(errs_method_extreme[c("absolute", "relative"), ]) |>
 +   apply(1, quantile,
 +         probs = seq(0, 1, length.out = 21) |> c(.99, .999) |> sort())
@@ -160,7 +160,7 @@ Type 'q()' to quit R.
 99%   2.220446e-16 1.921361e-10
 99.9% 2.775558e-16 7.692949e-02
 100%  6.255847e-16 7.000000e+00
-> 
+>
 > # check the gradient
 > library(numDeriv)
 > comp_errors_grad <- \(method)
@@ -172,7 +172,7 @@ Type 'q()' to quit R.
 +       mu <- rnorm(2)
 +       truth <- pmvnorm(upper = numeric(2), mean = mu, sigma = Sigma)
 +     }
-+ 
++
 +     # compute the gradient numerically of the log of the interval
 +     fn <- pmvnorm(upper = numeric(2), mean = mu, sigma = Sigma)
 +     num_grad <- grad(
@@ -181,33 +181,33 @@ Type 'q()' to quit R.
 +         S <- matrix(nrow = 2, ncol = 2)
 +         S[upper.tri(S, TRUE)] <- tail(par, 3)
 +         S[lower.tri(S)] <- t(S)[lower.tri(S)]
-+ 
++
 +         pmvnorm(upper = numeric(2), mean = mu, sigma = S)
 +       }, c(mu, Sigma[upper.tri(Sigma, TRUE)]), method.args = list(r = 6))
-+ 
++
 +     # compute the gradient, compute the error and return
 +     est <- pbvn_grad(mu = mu, Sigma = Sigma, method = method)
-+ 
++
 +     # only keep the upper triangle
 +     d_Sig <- tail(est, 4) |> matrix(nrow = 2)
 +     d_Sig[upper.tri(d_Sig)] <- 2 * d_Sig[upper.tri(d_Sig)]
 +     val <- attr(est, "prob")
 +     est <- c(val, c(head(est, 2), d_Sig[upper.tri(d_Sig, TRUE)]) / val)
-+ 
++
 +     truth <- c(fn, num_grad / fn) |>
 +       setNames(c("integral", "d mu1", "d mu2", "d Sig11", "d Sig12",
 +                  "d Sig22"))
 +     err <- est - truth
 +     relative = ifelse(abs(truth) < 1e-12, err, err / abs(truth))
-+ 
++
 +     cbind(absolute = err, relative = relative, truth = truth, est,
 +           rho = cov2cor(Sigma)[1, 2], mu_std1 = mu[1] / sqrt(Sigma[1, 1]),
 +           mu_std2 = mu[2] / sqrt(Sigma[2, 2]))
 +   }, simplify = "array")
-> 
+>
 > errs_grad_method0 <- comp_errors_grad(0)
 > errs_grad_method1 <- comp_errors_grad(1)
-> 
+>
 > # quantiles of the absolute error
 > apply(abs(errs_grad_method0[, "absolute", ]),
 +       1, quantile, probs = seq(0, 1, length.out = 21) |> c(.99, .999) |> sort())
@@ -309,7 +309,7 @@ Type 'q()' to quit R.
 99%   4.453644e-06
 99.9% 4.006217e+02
 100%  7.263380e+06
-> 
+>
 > # quantiles of the relative error
 > apply(abs(errs_grad_method0[, "relative", ]),
 +       1, quantile, probs = seq(0, 1, length.out = 21) |> c(.99, .999) |> sort())
@@ -411,7 +411,7 @@ Type 'q()' to quit R.
 99%   7.222632e-03
 99.9% 1.020868e+00
 100%  3.063878e+01
-> 
+>
 > # check the computation time
 > bench::mark(
 +   `method 0` = pbvn_grad(mu = mu, Sigma = Sigma, method = 0),
@@ -423,7 +423,7 @@ Type 'q()' to quit R.
 1 method 0     6.59µs 6.75µs   141991.        0B      0   10000     0     70.4ms
 2 method 1     8.88µs 9.03µs   108410.        0B     10.8  9999     1     92.2ms
 # … with 4 more variables: result <list>, memory <list>, time <list>, gc <list>
-> 
+>
 > # # plot the errors versus the integral value
 > # vals <- errs["integral", "truth", ]
 > #
@@ -464,7 +464,7 @@ Type 'q()' to quit R.
 > #   plot(rhos, errs["d Sig12", "absolute", ], type = "h")
 > #   plot(rhos, errs["d Sig22", "absolute", ], type = "h")
 > # })
-> 
+>
 > proc.time()
-   user  system elapsed 
-322.434   0.155 322.701 
+   user  system elapsed
+322.434   0.155 322.701
