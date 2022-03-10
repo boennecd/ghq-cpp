@@ -38,7 +38,7 @@ pbvn <- function(mu, Sigma, method) {
 }
 
 #' @export
-pbvn_grad <- function(mu, Sigma) {
-    .Call(`_ghqCpp_pbvn_grad`, mu, Sigma)
+pbvn_grad <- function(mu, Sigma, method = 1L) {
+    .Call(`_ghqCpp_pbvn_grad`, mu, Sigma, method)
 }
 

@@ -173,14 +173,19 @@ double pbvn
 //' @export
 // [[Rcpp::export(rng = false)]]
 Rcpp::NumericVector pbvn_grad
-  (Rcpp::NumericVector const mu, Rcpp::NumericMatrix const Sigma){
+  (Rcpp::NumericVector const mu, Rcpp::NumericMatrix const Sigma,
+   int const method = 1){
   if(mu.size() != 2)
     throw std::invalid_argument("invalid mu");
   else if(Sigma.nrow() != 2 || Sigma.ncol() != 2)
     throw std::invalid_argument("invalid Sigma");
+  else if(method < 0 || method > 1)
+    throw std::invalid_argument("invalid method");
 
   Rcpp::NumericVector gr(6);
-  double const prob{pbvn_grad(&mu[0], &Sigma[0], &gr[0])};
+  double const prob
+    {method == 1 ? pbvn_grad<1>(&mu[0], &Sigma[0], &gr[0])
+                 : pbvn_grad<0>(&mu[0], &Sigma[0], &gr[0])};
   gr.attr("prob") = prob;
 
   return gr;

@@ -108,8 +108,8 @@ Type 'q()' to quit R.
 # A tibble: 2 × 13
   expression         min   median `itr/sec` mem_alloc `gc/sec` n_itr  n_gc
   <bch:expr>    <bch:tm> <bch:tm>     <dbl> <bch:byt>    <dbl> <int> <dbl>
-1 pbvn method 0   6.51µs   6.95µs   133791.        0B     13.4  9999     1
-2 pbvn method 1   1.32µs   1.42µs   649422.        0B      0   10000     0
+1 pbvn method 0   6.91µs   7.04µs   138825.        0B     13.9  9999     1
+2 pbvn method 1   1.39µs    1.5µs   624718.        0B      0   10000     0
 # … with 5 more variables: total_time <bch:tm>, result <list>, memory <list>,
 #   time <list>, gc <list>
 > 
@@ -163,49 +163,53 @@ Type 'q()' to quit R.
 > 
 > # check the gradient
 > library(numDeriv)
-> errs <- sapply(seq_len(1e4), \(i){
-+   set.seed(i)
-+   truth <- -Inf
-+   while(!is.finite(truth) || truth < 1e-12){
-+     Sigma <- rWishart(1, 2, diag(2)) |> drop()
-+     mu <- rnorm(2)
-+     truth <- pmvnorm(upper = numeric(2), mean = mu, sigma = Sigma)
-+   }
+> comp_errors_grad <- \(method)
++   sapply(seq_len(1e4), \(i){
++     set.seed(i)
++     truth <- -Inf
++     while(!is.finite(truth) || truth < 1e-12){
++       Sigma <- rWishart(1, 2, diag(2)) |> drop()
++       mu <- rnorm(2)
++       truth <- pmvnorm(upper = numeric(2), mean = mu, sigma = Sigma)
++     }
 + 
-+   # compute the gradient numerically of the log of the interval
-+   fn <- pmvnorm(upper = numeric(2), mean = mu, sigma = Sigma)
-+   num_grad <- grad(
-+     \(par) {
-+       mu <- head(par, 2)
-+       S <- matrix(nrow = 2, ncol = 2)
-+       S[upper.tri(S, TRUE)] <- tail(par, 3)
-+       S[lower.tri(S)] <- t(S)[lower.tri(S)]
++     # compute the gradient numerically of the log of the interval
++     fn <- pmvnorm(upper = numeric(2), mean = mu, sigma = Sigma)
++     num_grad <- grad(
++       \(par) {
++         mu <- head(par, 2)
++         S <- matrix(nrow = 2, ncol = 2)
++         S[upper.tri(S, TRUE)] <- tail(par, 3)
++         S[lower.tri(S)] <- t(S)[lower.tri(S)]
 + 
-+       pmvnorm(upper = numeric(2), mean = mu, sigma = S)
-+     }, c(mu, Sigma[upper.tri(Sigma, TRUE)]), method.args = list(r = 6))
++         pmvnorm(upper = numeric(2), mean = mu, sigma = S)
++       }, c(mu, Sigma[upper.tri(Sigma, TRUE)]), method.args = list(r = 6))
 + 
-+   # compute the gradient, compute the error and return
-+   est <- pbvn_grad(mu = mu, Sigma = Sigma)
++     # compute the gradient, compute the error and return
++     est <- pbvn_grad(mu = mu, Sigma = Sigma, method = method)
 + 
-+   # only keep the upper triangle
-+   d_Sig <- tail(est, 4) |> matrix(nrow = 2)
-+   d_Sig[upper.tri(d_Sig)] <- 2 * d_Sig[upper.tri(d_Sig)]
-+   val <- attr(est, "prob")
-+   est <- c(val, c(head(est, 2), d_Sig[upper.tri(d_Sig, TRUE)]) / val)
++     # only keep the upper triangle
++     d_Sig <- tail(est, 4) |> matrix(nrow = 2)
++     d_Sig[upper.tri(d_Sig)] <- 2 * d_Sig[upper.tri(d_Sig)]
++     val <- attr(est, "prob")
++     est <- c(val, c(head(est, 2), d_Sig[upper.tri(d_Sig, TRUE)]) / val)
 + 
-+   truth <- c(fn, num_grad / fn) |>
-+     setNames(c("integral", "d mu1", "d mu2", "d Sig11", "d Sig12",
-+                "d Sig22"))
-+   err <- est - truth
-+   relative = ifelse(abs(truth) < 1e-12, err, err / abs(truth))
++     truth <- c(fn, num_grad / fn) |>
++       setNames(c("integral", "d mu1", "d mu2", "d Sig11", "d Sig12",
++                  "d Sig22"))
++     err <- est - truth
++     relative = ifelse(abs(truth) < 1e-12, err, err / abs(truth))
 + 
-+   cbind(absolute = err, relative = relative, truth = truth, est,
-+         rho = cov2cor(Sigma)[1, 2], mu_std1 = mu[1] / sqrt(Sigma[1, 1]),
-+         mu_std2 = mu[2] / sqrt(Sigma[2, 2]))
-+ }, simplify = "array")
++     cbind(absolute = err, relative = relative, truth = truth, est,
++           rho = cov2cor(Sigma)[1, 2], mu_std1 = mu[1] / sqrt(Sigma[1, 1]),
++           mu_std2 = mu[2] / sqrt(Sigma[2, 2]))
++   }, simplify = "array")
+> 
+> errs_grad_method0 <- comp_errors_grad(0)
+> errs_grad_method1 <- comp_errors_grad(1)
 > 
 > # quantiles of the absolute error
-> apply(abs(errs[, "absolute", ]),
+> apply(abs(errs_grad_method0[, "absolute", ]),
 +       1, quantile, probs = seq(0, 1, length.out = 21) |> c(.99, .999) |> sort())
           integral        d mu1        d mu2      d Sig11      d Sig12
 0%    0.000000e+00 0.000000e+00 0.000000e+00 7.042189e-16 9.983656e-19
@@ -255,9 +259,59 @@ Type 'q()' to quit R.
 99%   5.078585e-03
 99.9% 4.006217e+02
 100%  7.263380e+06
+> apply(abs(errs_grad_method1[, "absolute", ]),
++       1, quantile, probs = seq(0, 1, length.out = 21) |> c(.99, .999) |> sort())
+          integral        d mu1        d mu2      d Sig11      d Sig12
+0%    0.000000e+00 0.000000e+00 0.000000e+00 0.000000e+00 0.000000e+00
+5%    0.000000e+00 1.198341e-12 1.226056e-12 5.379936e-13 0.000000e+00
+10%   0.000000e+00 4.600413e-12 4.618694e-12 1.858832e-12 6.244682e-13
+15%   0.000000e+00 8.195883e-12 8.387113e-12 3.351481e-12 2.796650e-12
+20%   0.000000e+00 1.195803e-11 1.209329e-11 4.962197e-12 5.361245e-12
+25%   0.000000e+00 1.630598e-11 1.657523e-11 6.798349e-12 8.236096e-12
+30%   0.000000e+00 2.113480e-11 2.118332e-11 8.777422e-12 1.135469e-11
+35%   0.000000e+00 2.722927e-11 2.638198e-11 1.119099e-11 1.472106e-11
+40%   0.000000e+00 3.378005e-11 3.284484e-11 1.395745e-11 1.904856e-11
+45%   1.626303e-19 4.129169e-11 4.085279e-11 1.772516e-11 2.418108e-11
+50%   6.071532e-18 5.006290e-11 4.980855e-11 2.211527e-11 3.076895e-11
+55%   1.387779e-17 6.138205e-11 6.135059e-11 2.804743e-11 3.880543e-11
+60%   2.775558e-17 7.549130e-11 7.497993e-11 3.599402e-11 4.915395e-11
+65%   3.168039e-17 9.352642e-11 9.378888e-11 4.628759e-11 6.462233e-11
+70%   5.551115e-17 1.187260e-10 1.182066e-10 6.315738e-11 8.777185e-11
+75%   5.551115e-17 1.554558e-10 1.557288e-10 8.925450e-11 1.264708e-10
+80%   6.938894e-17 2.192527e-10 2.212016e-10 1.397995e-10 1.909841e-10
+85%   1.110223e-16 3.569297e-10 3.510458e-10 2.472572e-10 3.267205e-10
+90%   1.110223e-16 7.613726e-10 7.047227e-10 6.585768e-10 7.230025e-10
+95%   1.387779e-16 3.498490e-09 3.323536e-09 4.141559e-09 4.354425e-09
+99%   2.220446e-16 2.781860e-07 3.544786e-07 4.769400e-06 8.323898e-06
+99.9% 2.775796e-16 2.707231e-03 1.503850e-03 6.264144e+02 2.793756e+04
+100%  8.517492e-16 2.191359e-01 2.393665e-01 3.775189e+05 1.153060e+06
+           d Sig22
+0%    0.000000e+00
+5%    5.004627e-13
+10%   1.741981e-12
+15%   3.181313e-12
+20%   4.734210e-12
+25%   6.537894e-12
+30%   8.401280e-12
+35%   1.069941e-11
+40%   1.359096e-11
+45%   1.697783e-11
+50%   2.163705e-11
+55%   2.781468e-11
+60%   3.535332e-11
+65%   4.641053e-11
+70%   6.154755e-11
+75%   8.736435e-11
+80%   1.441482e-10
+85%   2.630634e-10
+90%   6.565318e-10
+95%   4.366854e-09
+99%   4.453644e-06
+99.9% 4.006217e+02
+100%  7.263380e+06
 > 
 > # quantiles of the relative error
-> apply(abs(errs[, "relative", ]),
+> apply(abs(errs_grad_method0[, "relative", ]),
 +       1, quantile, probs = seq(0, 1, length.out = 21) |> c(.99, .999) |> sort())
           integral        d mu1        d mu2      d Sig11      d Sig12
 0%    0.000000e+00 0.000000e+00 0.000000e+00 7.042189e-16 9.983656e-19
@@ -307,15 +361,68 @@ Type 'q()' to quit R.
 99%   2.592348e-01
 99.9% 1.761120e+01
 100%  5.265625e+02
+> apply(abs(errs_grad_method1[, "relative", ]),
++       1, quantile, probs = seq(0, 1, length.out = 21) |> c(.99, .999) |> sort())
+          integral        d mu1        d mu2      d Sig11      d Sig12
+0%    0.000000e+00 0.000000e+00 0.000000e+00 0.000000e+00 0.000000e+00
+5%    0.000000e+00 2.418743e-12 2.556699e-12 4.499765e-12 0.000000e+00
+10%   0.000000e+00 9.341033e-12 9.609138e-12 1.401744e-11 2.363378e-12
+15%   0.000000e+00 1.578545e-11 1.685166e-11 2.505831e-11 1.073112e-11
+20%   0.000000e+00 2.335295e-11 2.371650e-11 3.625433e-11 1.885716e-11
+25%   0.000000e+00 3.097302e-11 3.134890e-11 4.822618e-11 2.779025e-11
+30%   0.000000e+00 3.974417e-11 3.946291e-11 6.119633e-11 3.686756e-11
+35%   0.000000e+00 5.004639e-11 4.847645e-11 7.490911e-11 4.682711e-11
+40%   0.000000e+00 6.107167e-11 6.004859e-11 8.894276e-11 5.816046e-11
+45%   1.241426e-16 7.513144e-11 7.372941e-11 1.059273e-10 7.169294e-11
+50%   1.526472e-16 9.086743e-11 8.948337e-11 1.265837e-10 8.911989e-11
+55%   1.835849e-16 1.097485e-10 1.078362e-10 1.496780e-10 1.103615e-10
+60%   2.198461e-16 1.344270e-10 1.305045e-10 1.784349e-10 1.434906e-10
+65%   2.971126e-16 1.670379e-10 1.615319e-10 2.123813e-10 1.942536e-10
+70%   3.851592e-16 2.130634e-10 2.053347e-10 2.587559e-10 2.827444e-10
+75%   5.096537e-16 2.909221e-10 2.701893e-10 3.285526e-10 4.678821e-10
+80%   6.950923e-16 4.337017e-10 4.013404e-10 4.421599e-10 9.463514e-10
+85%   1.052691e-15 7.394629e-10 7.064928e-10 6.842668e-10 2.811548e-09
+90%   2.469787e-15 1.971571e-09 1.996048e-09 1.491744e-09 2.166424e-08
+95%   1.371818e-14 2.499734e-08 2.618505e-08 1.501616e-08 3.288905e-06
+99%   1.368444e-12 4.721619e-04 3.064131e-04 5.223578e-03 4.038489e-01
+99.9% 1.830769e-08 1.037601e+00 1.089033e+00 1.358881e+00 1.429500e+00
+100%  3.419518e-07 2.983004e+00 2.385051e+01 2.734349e+01 8.339811e+00
+           d Sig22
+0%    0.000000e+00
+5%    4.305370e-12
+10%   1.446888e-11
+15%   2.535844e-11
+20%   3.632113e-11
+25%   4.905026e-11
+30%   6.118781e-11
+35%   7.453405e-11
+40%   8.968398e-11
+45%   1.085023e-10
+50%   1.269339e-10
+55%   1.506491e-10
+60%   1.788548e-10
+65%   2.114396e-10
+70%   2.544631e-10
+75%   3.233957e-10
+80%   4.350873e-10
+85%   6.494496e-10
+90%   1.510803e-09
+95%   1.416941e-08
+99%   7.222632e-03
+99.9% 1.020868e+00
+100%  3.063878e+01
 > 
 > # check the computation time
-> bench::mark(pbvn_grad(mu = mu, Sigma = Sigma))
-# A tibble: 1 × 13
-  expression                             min median `itr/sec` mem_alloc `gc/sec`
-  <bch:expr>                        <bch:tm> <bch:>     <dbl> <bch:byt>    <dbl>
-1 pbvn_grad(mu = mu, Sigma = Sigma)    6.3µs 6.55µs   145441.        0B        0
-# … with 7 more variables: n_itr <int>, n_gc <dbl>, total_time <bch:tm>,
-#   result <list>, memory <list>, time <list>, gc <list>
+> bench::mark(
++   `method 0` = pbvn_grad(mu = mu, Sigma = Sigma, method = 0),
++   `method 1` = pbvn_grad(mu = mu, Sigma = Sigma, method = 1),
++   check = FALSE)
+# A tibble: 2 × 13
+  expression      min median `itr/sec` mem_alloc `gc/sec` n_itr  n_gc total_time
+  <bch:expr> <bch:tm> <bch:>     <dbl> <bch:byt>    <dbl> <int> <dbl>   <bch:tm>
+1 method 0     6.59µs 6.75µs   141991.        0B      0   10000     0     70.4ms
+2 method 1     8.88µs 9.03µs   108410.        0B     10.8  9999     1     92.2ms
+# … with 4 more variables: result <list>, memory <list>, time <list>, gc <list>
 > 
 > # # plot the errors versus the integral value
 > # vals <- errs["integral", "truth", ]
@@ -360,4 +467,4 @@ Type 'q()' to quit R.
 > 
 > proc.time()
    user  system elapsed 
-162.372   0.077 162.441 
+322.434   0.155 322.701 

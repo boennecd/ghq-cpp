@@ -1,6 +1,7 @@
 #ifndef PBVN_H
 #define PBVN_H
 
+#include "richardson-extrapolation.h"
 #include <RcppArmadillo.h>
 #include <array>
 #include <Rmath.h> // Rf_dnorm4, Rf_pnorm5 etc.
@@ -19,6 +20,56 @@ inline double dnrm_log(double const x){
   log_sqrt_2pi{0.918938533204673};
   return x > sqrt_double_max ? -std::numeric_limits<double>::infinity()
                              : -log_sqrt_2pi - x * x / 2;
+}
+
+/// computes the integral as mvbvu using Genz extension of Drezner's method
+inline double pbvn_Drezner(double const h, double const k, double const rho){
+  auto pnrm = [](double const x){
+    return Rf_pnorm5(x, 0, 1, 1, 0);
+  };
+
+  /* Gauss–Legendre quadrature nodes scale to the interval [0, 1]. I.e.
+     gq <- SimSurvNMarker::get_gl_rule(12)
+     ord <- order(gq$weight)
+     dput((gq$node[ord] + 1) / 2)
+     dput(gq$weight[ord] / 2)
+   */
+
+  constexpr double nodes6[]{0.966234757101576, 0.033765242898424, 0.830604693233132, 0.169395306766868, 0.619309593041598, 0.380690406958402},
+                 weights6[]{0.0856622461895852, 0.0856622461895852, 0.180380786524069, 0.180380786524069, 0.233956967286346, 0.233956967286346},
+                  nodes12[]{0.99078031712336, 0.00921968287664043, 0.952058628185237, 0.0479413718147626, 0.884951337097152, 0.115048662902848, 0.793658977143309, 0.206341022856691, 0.68391574949909, 0.31608425050091, 0.562616704255734, 0.437383295744266},
+                weights12[]{0.0235876681932559, 0.0235876681932559, 0.0534696629976592, 0.0534696629976592, 0.0800391642716731, 0.0800391642716731, 0.101583713361533, 0.101583713361533, 0.116746268269177, 0.116746268269177, 0.124573522906701, 0.124573522906701},
+                  nodes20[]{0.996564299592547, 0.00343570040745256, 0.981985963638957, 0.0180140363610431, 0.956117214125663, 0.0438827858743371, 0.919558485911109, 0.0804415140888906, 0.873165953230075, 0.126834046769925, 0.818026840363258, 0.181973159636742, 0.755433500975414, 0.244566499024587, 0.68685304435771, 0.31314695564229, 0.613892925570823, 0.386107074429178, 0.538263260566749, 0.461736739433251},
+                weights20[]{0.00880700356957606, 0.00880700356957606, 0.0203007149001935, 0.0203007149001935, 0.0313360241670545, 0.0313360241670545, 0.0416383707883524, 0.0416383707883524, 0.0509650599086202, 0.0509650599086202, 0.0590972659807592, 0.0590972659807592, 0.0658443192245883, 0.0658443192245883, 0.071048054659191, 0.071048054659191, 0.0745864932363019, 0.0745864932363019, 0.0763766935653629, 0.0763766935653629};
+
+  auto wo_border_correction = [&](double const *nodes, double const *weights,
+                                  size_t const n_nodes){
+    double const offset{h * h + k * k},
+                  slope{2 * h * k},
+                     ub{std::asin(rho)};
+
+    double out{};
+    for(size_t i = 0; i < n_nodes; ++i){
+      double const n{ub * nodes[i]},
+               sin_n{std::sin(n)};
+      out += weights[i] * std::exp
+        (-(offset - slope * sin_n) / (2 * (1 - sin_n * sin_n)));
+    }
+    out *= ub / (2 * M_PI);
+
+    return out + pnrm(-h) * pnrm(-k);
+  };
+
+  if(std::abs(rho) <= .3)
+    return wo_border_correction(nodes6, weights6, 6);
+  else if(std::abs(rho) <= .75)
+    return wo_border_correction(nodes12, weights12, 12);
+  else if(std::abs(rho) <= 0.925)
+    return wo_border_correction(nodes20, weights20, 20);
+
+  // handle the large absolute correlation. My attempt to implement this was
+  // not as numerically stable as Genz
+  return F77_CALL(mvbvu)(&h, &k, &rho);
 }
 
 /**
@@ -116,55 +167,9 @@ double pbvn(double const *mu, double const *Sigma){
   }
 
   double const h{mu[0] / std::sqrt(Sigma[0])},
-               k{mu[1] / std::sqrt(Sigma[3])};
-  double rho{Sigma[1] / std::sqrt(Sigma[0] * Sigma[3])};
-
-  auto pnrm = [](double const x){
-    return Rf_pnorm5(x, 0, 1, 1, 0);
-  };
-
-  /* Gauss–Legendre quadrature nodes scale to the interval [0, 1]. I.e.
-     gq <- SimSurvNMarker::get_gl_rule(12)
-     ord <- order(gq$weight)
-     dput((gq$node[ord] + 1) / 2)
-     dput(gq$weight[ord] / 2)
-   */
-
-  constexpr double nodes6[]{0.966234757101576, 0.033765242898424, 0.830604693233132, 0.169395306766868, 0.619309593041598, 0.380690406958402},
-                 weights6[]{0.0856622461895852, 0.0856622461895852, 0.180380786524069, 0.180380786524069, 0.233956967286346, 0.233956967286346},
-                  nodes12[]{0.99078031712336, 0.00921968287664043, 0.952058628185237, 0.0479413718147626, 0.884951337097152, 0.115048662902848, 0.793658977143309, 0.206341022856691, 0.68391574949909, 0.31608425050091, 0.562616704255734, 0.437383295744266},
-                weights12[]{0.0235876681932559, 0.0235876681932559, 0.0534696629976592, 0.0534696629976592, 0.0800391642716731, 0.0800391642716731, 0.101583713361533, 0.101583713361533, 0.116746268269177, 0.116746268269177, 0.124573522906701, 0.124573522906701},
-                  nodes20[]{0.996564299592547, 0.00343570040745256, 0.981985963638957, 0.0180140363610431, 0.956117214125663, 0.0438827858743371, 0.919558485911109, 0.0804415140888906, 0.873165953230075, 0.126834046769925, 0.818026840363258, 0.181973159636742, 0.755433500975414, 0.244566499024587, 0.68685304435771, 0.31314695564229, 0.613892925570823, 0.386107074429178, 0.538263260566749, 0.461736739433251},
-                weights20[]{0.00880700356957606, 0.00880700356957606, 0.0203007149001935, 0.0203007149001935, 0.0313360241670545, 0.0313360241670545, 0.0416383707883524, 0.0416383707883524, 0.0509650599086202, 0.0509650599086202, 0.0590972659807592, 0.0590972659807592, 0.0658443192245883, 0.0658443192245883, 0.071048054659191, 0.071048054659191, 0.0745864932363019, 0.0745864932363019, 0.0763766935653629, 0.0763766935653629};
-
-  auto wo_border_correction = [&](double const *nodes, double const *weights,
-                                  size_t const n_nodes){
-    double const offset{h * h + k * k},
-                  slope{2 * h * k},
-                     ub{std::asin(rho)};
-
-    double out{};
-    for(size_t i = 0; i < n_nodes; ++i){
-      double const n{ub * nodes[i]},
-               sin_n{std::sin(n)};
-      out += weights[i] * std::exp
-        (-(offset - slope * sin_n) / (2 * (1 - sin_n * sin_n)));
-    }
-    out *= ub / (2 * M_PI);
-
-    return out + pnrm(-h) * pnrm(-k);
-  };
-
-  if(std::abs(rho) <= .3)
-    return wo_border_correction(nodes6, weights6, 6);
-  else if(std::abs(rho) <= .75)
-    return wo_border_correction(nodes12, weights12, 12);
-  else if(std::abs(rho) <= 0.925)
-    return wo_border_correction(nodes20, weights20, 20);
-
-  // handle the large absolute correlation. My attempt to implement this was
-  // not as numerically stable as Genz
-  return F77_CALL(mvbvu)(&h, &k, &rho);
+               k{mu[1] / std::sqrt(Sigma[3])},
+             rho{Sigma[1] / std::sqrt(Sigma[0] * Sigma[3])};
+  return pbvn_Drezner(h, k, rho);
 }
 
 /**
@@ -184,8 +189,67 @@ double pbvn(double const *mu, double const *Sigma){
  * the derivatives w.r.t. Sigma are stored as a 2 x 2 matrix ignoring the
  * symmetry. Thus, a 6D array needs to be passed for the gradient.
  */
-template<bool comp_d_Sig = true>
+template<int method = 1, bool comp_d_Sig = true>
 double pbvn_grad(double const *mu, double const *Sigma, double *grad){
+  static_assert(method == 1 || method == 0, "method is not implemented");
+
+  if constexpr(method == 1){
+    double const Sig_h{std::sqrt(Sigma[0])},
+                 Sig_k{std::sqrt(Sigma[3])},
+                 h{mu[0] / Sig_h},
+                 k{mu[1] / Sig_k},
+               rho{Sigma[1] / (Sig_h  * Sig_k)},
+               out{pbvn_Drezner(h, k, rho)};
+
+    // compute the derivatives with numerical differentiation
+    constexpr double eps{1e-4};
+    constexpr unsigned order{6};
+
+    double wk_mem[n_wk_mem_extrapolation(1, order)];
+    double d_h{}, d_k{};
+
+    {
+      auto d_h_functor = [&](double const x, double *out) {
+        *out = pbvn_Drezner(x, k, rho);
+      };
+      richardson_extrapolation<decltype(d_h_functor)>
+        (d_h_functor, order, wk_mem, eps, 2, 1e-10, 1)(h, &d_h);
+    }
+    {
+      auto d_k_functor = [&](double const x, double *out) {
+        *out = pbvn_Drezner(h, x, rho);
+      };
+      richardson_extrapolation<decltype(d_k_functor)>
+        (d_k_functor, order, wk_mem, eps, 2, 1e-10, 1)(k, &d_k);
+    }
+
+    grad[0] = d_h / Sig_h;
+    grad[1] = d_k / Sig_k;
+
+    if constexpr(comp_d_Sig){
+      double const rho_inv{std::log((rho + 1) / (1 - rho))};
+      double d_rho_inv{};
+      {
+        auto d_rho_inv_functor = [&](double const x, double *out) {
+          double const rho_val{2 / (1 + std::exp(-x)) - 1};
+          *out = pbvn_Drezner(h, k, rho_val);
+        };
+        richardson_extrapolation<decltype(d_rho_inv_functor)>
+          (d_rho_inv_functor, order, wk_mem, eps, 2, 1e-10, 1)
+          (rho_inv, &d_rho_inv);
+      }
+
+      double const d_rho{-2 * d_rho_inv / ((rho - 1) * (rho + 1))};
+
+      grad[2] = -d_h * h / (2 * Sigma[0]) - d_rho * rho / (2 * Sigma[0]);
+      grad[3] = d_rho / (Sig_h  * Sig_k) / 2;
+      grad[4] = grad[3];
+      grad[5] = -d_k * k / (2 * Sigma[3]) - d_rho * rho / (2 * Sigma[3]);
+    }
+
+    return out;
+  }
+
   if(Sigma[1] < 0 && mu[0] < 0 && mu[1] < 0){
     double const stds[]{std::sqrt(Sigma[0]), std::sqrt(Sigma[3])};
     // double const std_mu[]{mu[0] / stds[0], mu[1] / stds[1]};
@@ -197,7 +261,7 @@ double pbvn_grad(double const *mu, double const *Sigma, double *grad){
     double out{1};
     {
       double const mu_altered[]{-mu[0], -mu[1]};
-      out -= pbvn_grad<comp_d_Sig>(mu_altered, Sigma, inter_gr);
+      out -= pbvn_grad<method, comp_d_Sig>(mu_altered, Sigma, inter_gr);
       grad[0] += inter_gr[0];
       grad[1] += inter_gr[1];
       if constexpr(comp_d_Sig){
@@ -209,7 +273,7 @@ double pbvn_grad(double const *mu, double const *Sigma, double *grad){
     }
     {
       double const mu_altered[]{mu[0], -mu[1]};
-      out -= pbvn_grad<comp_d_Sig>(mu_altered, altered_Sigma, inter_gr);
+      out -= pbvn_grad<method, comp_d_Sig>(mu_altered, altered_Sigma, inter_gr);
       grad[0] -= inter_gr[0];
       grad[1] += inter_gr[1];
       if constexpr(comp_d_Sig){
@@ -228,7 +292,7 @@ double pbvn_grad(double const *mu, double const *Sigma, double *grad){
     }
     {
       double const mu_altered[]{-mu[0], mu[1]};
-      out -= pbvn_grad<comp_d_Sig>(mu_altered, altered_Sigma, inter_gr);
+      out -= pbvn_grad<method, comp_d_Sig>(mu_altered, altered_Sigma, inter_gr);
       grad[0] += inter_gr[0];
       grad[1] -= inter_gr[1];
       if constexpr(comp_d_Sig){
@@ -416,9 +480,10 @@ double pbvn_grad(double const *mu, double const *Sigma, double *grad){
 }
 
 /// computes the Hessian w.r.t. mu. Thus, a 4D array has to be passed
-inline void pbvn_hess(double const *mu, double const *Sigma, double *hess){
+template<int method = 1>
+void pbvn_hess(double const *mu, double const *Sigma, double *hess){
   double gr[6];
-  pbvn_grad<true>(mu, Sigma, gr);
+  pbvn_grad<method, true>(mu, Sigma, gr);
 
   arma::mat Sig(const_cast<double *>(Sigma), 2, 2, false);
   for(unsigned j = 0; j < 2; ++j)
