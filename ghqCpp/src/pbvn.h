@@ -4,28 +4,22 @@
 #include "richardson-extrapolation.h"
 #include <RcppArmadillo.h>
 #include <array>
-#include <Rmath.h> // Rf_dnorm4, Rf_pnorm5 etc.
 #include <R_ext/RS.h> // for F77_NAME and F77_CALL
 #include <algorithm>
 #include <cmath>
+#include "dnorm.h"
+#include "pnorm.h"
+#include "qnorm.h"
 
 extern "C" {
   double F77_NAME(mvbvu)(double const *dh, double const *dk, double const *r);
 }
 
 namespace ghqCpp {
-inline double dnrm_log(double const x){
-  // dput(sqrt(.Machine$double.xmax / 10))
-  constexpr double sqrt_double_max{4.23992114886859e+153},
-  log_sqrt_2pi{0.918938533204673};
-  return x > sqrt_double_max ? -std::numeric_limits<double>::infinity()
-                             : -log_sqrt_2pi - x * x / 2;
-}
-
 /// computes the integral as mvbvu using Genz extension of Drezner's method
 inline double pbvn_Drezner(double const h, double const k, double const rho){
   auto pnrm = [](double const x){
-    return Rf_pnorm5(x, 0, 1, 1, 0);
+    return pnorm_std(x, 1, 0);
   };
 
   /* Gauss–Legendre quadrature nodes scale to the interval [0, 1]. I.e.
@@ -95,13 +89,13 @@ double pbvn(double const *mu, double const *Sigma){
       double const std_mu[]
         {mu[0] / std::sqrt(Sigma[0]), mu[1] / std::sqrt(Sigma[3])};
       if(std_mu[0] > std_mu[1]){
-        double const pnrm_area{Rf_pnorm5(std_mu[0], 0, 1, 1, 0)},
+        double const pnrm_area{pnorm_std(std_mu[0], 1, 0)},
                      mu_altered[]{mu[0], -mu[1]};
 
         return 1 - pnrm_area - pbvn<method>(mu_altered, altered_Sigma);
       }
 
-      double const pnrm_area{Rf_pnorm5(std_mu[1], 0, 1, 1, 0)},
+      double const pnrm_area{pnorm_std(std_mu[1], 1, 0)},
                 mu_altered[]{-mu[0], mu[1]};
 
       return 1 - pnrm_area - pbvn<method>(mu_altered, altered_Sigma);
@@ -149,12 +143,12 @@ double pbvn(double const *mu, double const *Sigma){
 
     // do the computation
     double out{};
-    double const p_outer{Rf_pnorm5(ubs[0], 0, 1, 1, 0)};
+    double const p_outer{pnorm_std(ubs[0], 1, 0)};
     for(size_t i = 0; i < n_nodes / 2; ++i){
       auto add_term = [&](bool const flip){
         double const val{flip ? 1 - nodes[i] : nodes[i]},
-                 z_outer{Rf_qnorm5(val * p_outer, 0, 1, 1, 0)},
-                 p_inner{Rf_pnorm5(ubs[1] - Sig_chol[1] * z_outer, 0, 1, 1, 1)};
+                 z_outer{qnorm_w(val * p_outer, 0, 1, 1, 0)},
+                 p_inner{pnorm_std(ubs[1] - Sig_chol[1] * z_outer, 1, 1)};
 
         out += std::exp(p_inner + log_weights[i]);
       };
@@ -202,7 +196,7 @@ double pbvn_grad(double const *mu, double const *Sigma, double *grad){
                out{pbvn_Drezner(h, k, rho)};
 
     // compute the derivatives with numerical differentiation
-    constexpr double eps{1e-4};
+    constexpr double eps{1e-2}, tol{1e-12};
     constexpr unsigned order{6};
 
     double wk_mem[n_wk_mem_extrapolation(1, order)];
@@ -213,14 +207,14 @@ double pbvn_grad(double const *mu, double const *Sigma, double *grad){
         *out = pbvn_Drezner(x, k, rho);
       };
       richardson_extrapolation<decltype(d_h_functor)>
-        (d_h_functor, order, wk_mem, eps, 2, 1e-10, 1)(h, &d_h);
+        (d_h_functor, order, wk_mem, eps, 2, tol, 1)(h, &d_h);
     }
     {
       auto d_k_functor = [&](double const x, double *out) {
         *out = pbvn_Drezner(h, x, rho);
       };
       richardson_extrapolation<decltype(d_k_functor)>
-        (d_k_functor, order, wk_mem, eps, 2, 1e-10, 1)(k, &d_k);
+        (d_k_functor, order, wk_mem, eps, 2, tol, 1)(k, &d_k);
     }
 
     grad[0] = d_h / Sig_h;
@@ -235,7 +229,7 @@ double pbvn_grad(double const *mu, double const *Sigma, double *grad){
           *out = pbvn_Drezner(h, k, rho_val);
         };
         richardson_extrapolation<decltype(d_rho_inv_functor)>
-          (d_rho_inv_functor, order, wk_mem, eps, 2, 1e-10, 1)
+          (d_rho_inv_functor, order, wk_mem, eps, 2, tol, 1)
           (rho_inv, &d_rho_inv);
       }
 
@@ -333,15 +327,15 @@ double pbvn_grad(double const *mu, double const *Sigma, double *grad){
   std::fill(grad, grad + (comp_d_Sig ? 6 : 2), 0);
   double * const d_mu{grad},
          * const d_Sig{comp_d_Sig ? grad + 2 : nullptr};
-  double const p_outer{Rf_pnorm5(ubs[0], 0, 1, 1, 0)};
+  double const p_outer{pnorm_std(ubs[0], 1, 0)};
 
   for(size_t i = 0; i < n_nodes; ++i){
-    double const z_outer{Rf_qnorm5(nodes[i] * p_outer, 0, 1, 1, 0)},
+    double const z_outer{qnorm_w(nodes[i] * p_outer, 0, 1, 1, 0)},
              u_lim_inner{ubs[1] - Sig_12_scaled * z_outer},
-                 p_inner{Rf_pnorm5(u_lim_inner, 0, 1, 1, 0)};
+                 p_inner{pnorm_std(u_lim_inner, 1, 0)};
 
     double const g1_fac{z_outer * p_inner},
-      dnorm_u_lim_inner{Rf_dnorm4(u_lim_inner, 0, 1, 0)},
+      dnorm_u_lim_inner{std::exp(dnrm_log(u_lim_inner))},
       trunc_mean_scaled{-dnorm_u_lim_inner};
     grad[0] += weights[i] * g1_fac;
     grad[1] += weights[i] * trunc_mean_scaled;

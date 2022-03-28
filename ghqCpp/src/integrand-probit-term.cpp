@@ -1,7 +1,8 @@
 #include "integrand-probit-term.h"
 #include "ghq-lp-utils.h"
 #include <algorithm>
-#include <Rmath.h> // Rf_dnorm4 and Rf_pnorm5
+#include "pnorm.h"
+#include "dnorm.h"
 
 namespace ghqCpp {
 
@@ -25,14 +26,14 @@ void mixed_probit_term<comp_grad>::eval
 
   // set the output
   for(size_t i = 0; i < n_points; ++i, ++outs)
-    *outs = Rf_pnorm5(lps[i], 0, 1, 1, 0);
+    *outs = pnorm_std(lps[i], 1, 0);
 
   if constexpr (comp_grad){
     double * const __restrict__ d_etas{outs};
 
     // the derivative w.r.t. eta and s
     for(size_t i = 0; i < n_points; ++i){
-      d_etas[i] = Rf_dnorm4(lps[i], 0, 1, 0) / s;
+      d_etas[i] = std::exp(dnrm_log(lps[i])) / s;
       outs[i + n_points] = -d_etas[i] * lps[i];
     }
     outs += 2 * n_points;
@@ -52,7 +53,7 @@ double mixed_probit_term<comp_grad>::log_integrand
   for(size_t i = 0; i < n_vars(); ++i)
     lp += point[i] * z[i];
   lp /= s;
-  return Rf_pnorm5(lp, 0, 1, 1, 1);
+  return pnorm_std(lp, 1, 1);
 }
 
 template<bool comp_grad>
@@ -63,8 +64,8 @@ double mixed_probit_term<comp_grad>::log_integrand_grad
   for(size_t i = 0; i < n_vars(); ++i)
     lp += point[i] * z[i];
   lp /= s;
-  double const log_pnrm{Rf_pnorm5(lp, 0, 1, 1, 1)},
-               log_dnrm{Rf_dnorm4(lp, 0, 1, 1)},
+  double const log_pnrm{pnorm_std(lp, 1, 1)},
+               log_dnrm{dnrm_log(lp)},
                d_lp{std::exp(log_dnrm - log_pnrm)};
 
   for(size_t i = 0; i < n_vars(); ++i)
@@ -82,8 +83,8 @@ void mixed_probit_term<comp_grad>::log_integrand_hess
     lp += point[i] * z[i];
   lp /= s;
 
-  double const log_pnrm{Rf_pnorm5(lp, 0, 1, 1, 1)},
-               log_dnrm{Rf_dnorm4(lp, 0, 1, 1)},
+  double const log_pnrm{pnorm_std(lp, 1, 1)},
+               log_dnrm{dnrm_log(lp)},
                   ratio{std::exp(log_dnrm - log_pnrm)},
                 d_lp_sq{-(lp * ratio + ratio * ratio)};
 

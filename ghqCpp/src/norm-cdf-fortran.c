@@ -1,5 +1,4 @@
-#include <Rmath.h> // Rf_dnorm4, Rf_pnorm5 etc.
-#include <R_ext/RS.h> // for F77_NAME and F77_CALL
+#include <R_ext/RS.h> // F77_SUB
+#include "pnorm.h"
 
-// TODO: replace with a version that is thread-safe
-double F77_SUB(mvphi)(double *x){ return Rf_pnorm5(*x, 0.0, 1.0, 1, 0); }
+double F77_SUB(mvphi)(double *x){ return pnorm_std(*x, 1, 0); }
