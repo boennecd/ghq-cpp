@@ -1,7 +1,6 @@
 #ifndef PBVN_H
 #define PBVN_H
 
-#include "richardson-extrapolation.h"
 #include <RcppArmadillo.h>
 #include <array>
 #include <R_ext/RS.h> // for F77_NAME and F77_CALL
@@ -182,6 +181,11 @@ double pbvn(double const *mu, double const *Sigma){
  *
  * the derivatives w.r.t. Sigma are stored as a 2 x 2 matrix ignoring the
  * symmetry. Thus, a 6D array needs to be passed for the gradient.
+ *
+ * An easier way to compute this is to use the method described in the appendix
+ * of
+ *
+ *   https://doi.org/10.1198/jcgs.2009.07130
  */
 template<int method = 1, bool comp_d_Sig = true>
 double pbvn_grad(double const *mu, double const *Sigma, double *grad){
@@ -193,52 +197,30 @@ double pbvn_grad(double const *mu, double const *Sigma, double *grad){
                  h{mu[0] / Sig_h},
                  k{mu[1] / Sig_k},
                rho{Sigma[1] / (Sig_h  * Sig_k)},
-               out{pbvn_Drezner(h, k, rho)};
+               out{pbvn_Drezner(h, k, rho)},
+          cond_var{(1 - rho) * (1 + rho)},
+           cond_sd{std::sqrt(cond_var)};
 
-    // compute the derivatives with numerical differentiation
-    constexpr double eps{1e-2}, tol{1e-12};
-    constexpr unsigned order{6};
+    double const dnrms[]{std::exp(dnrm_log(-h)), std::exp(dnrm_log(-k))},
+                 pnrms[]
+      {pnorm_std((-k + h * rho) / cond_sd, 1, 0),
+       pnorm_std((-h + k * rho) / cond_sd, 1, 0)},
+                   d_h{dnrms[0] * pnrms[0]},
+                   d_k{dnrms[1] * pnrms[1]};
 
-    double wk_mem[n_wk_mem_extrapolation(1, order)];
-    double d_h{}, d_k{};
-
-    {
-      auto d_h_functor = [&](double const x, double *out) {
-        *out = pbvn_Drezner(x, k, rho);
-      };
-      richardson_extrapolation<decltype(d_h_functor)>
-        (d_h_functor, order, wk_mem, eps, 2, tol, 1)(h, &d_h);
-    }
-    {
-      auto d_k_functor = [&](double const x, double *out) {
-        *out = pbvn_Drezner(h, x, rho);
-      };
-      richardson_extrapolation<decltype(d_k_functor)>
-        (d_k_functor, order, wk_mem, eps, 2, tol, 1)(k, &d_k);
-    }
-
-    grad[0] = d_h / Sig_h;
-    grad[1] = d_k / Sig_k;
+    grad[0] = -d_h / Sig_h;
+    grad[1] = -d_k / Sig_k;
 
     if constexpr(comp_d_Sig){
-      double const rho_inv{std::log((rho + 1) / (1 - rho))};
-      double d_rho_inv{};
-      {
-        auto d_rho_inv_functor = [&](double const x, double *out) {
-          double const rho_val{2 / (1 + std::exp(-x)) - 1};
-          *out = pbvn_Drezner(h, k, rho_val);
-        };
-        richardson_extrapolation<decltype(d_rho_inv_functor)>
-          (d_rho_inv_functor, order, wk_mem, eps, 2, tol, 1)
-          (rho_inv, &d_rho_inv);
-      }
+      constexpr double two_pi{6.28318530717959};
+      double const d_rho
+        {std::exp(-(h * h - 2 * rho * h * k + k * k) / (2 * cond_var)) /
+          (two_pi * cond_sd)};
 
-      double const d_rho{-2 * d_rho_inv / ((rho - 1) * (rho + 1))};
-
-      grad[2] = -d_h * h / (2 * Sigma[0]) - d_rho * rho / (2 * Sigma[0]);
+      grad[2] = (d_h * h - d_rho * rho) / (2 * Sigma[0]);
       grad[3] = d_rho / (Sig_h  * Sig_k) / 2;
       grad[4] = grad[3];
-      grad[5] = -d_k * k / (2 * Sigma[3]) - d_rho * rho / (2 * Sigma[3]);
+      grad[5] = (d_k * k - d_rho * rho) / (2 * Sigma[3]);
     }
 
     return out;
