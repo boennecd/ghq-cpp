@@ -123,6 +123,11 @@ void adaptive_problem::eval
       outs[i + j * n_points] *= fac[i];
 }
 
+void adaptive_problem::post_process
+  (double *res, simple_mem_stack<double> &mem) const {
+  problem.post_process(res, mem);
+}
+
 // recursive functions needed for quadrature implementation
 namespace {
 void ghq_fill_fixed
@@ -235,6 +240,8 @@ void ghq
 
   ghq_inner(res, n_out, outs, n_vars, idx_fix, n_points, n_vars, points,
             weights, problem, ghq_data_use, mem);
+
+  problem.post_process(res, mem);
 }
 
 combined_problem::combined_problem
@@ -329,6 +336,29 @@ void combined_problem::log_integrand_hess
     p->log_integrand_hess(point, hess_inner, mem);
     for(size_t i = 0; i < n_vars_sq; ++i)
       hess[i] += hess_inner[i];
+  }
+}
+
+void combined_problem::post_process
+(double *res, simple_mem_stack<double> &mem) const {
+  double const integral{res[0]};
+  res += 1;
+
+  for(auto p : problems){
+    size_t const p_n_out{p->n_out()};
+    if(p_n_out < 2)
+      continue;
+
+    double * const cp{mem.get(p_n_out)};
+    auto cp_marker = mem.set_mark_raii();
+    cp[0] = integral;
+    std::copy(res, res + p_n_out - 1, cp + 1);
+    p->post_process(cp, mem);
+
+    if(cp[0] != integral)
+      throw std::runtime_error("post_process changed the first element");
+    std::copy(cp + 1, cp + p_n_out, res);
+    res += p_n_out - 1;
   }
 }
 
@@ -445,8 +475,12 @@ void rescale_problem<comp_grad>::log_integrand_hess
 
 template<bool comp_grad>
 void rescale_problem<comp_grad>::post_process
-  (double * __restrict__ res, double const integral)
-  const {
+  (double *res, simple_mem_stack<double> &mem) const {
+  inner_problem.post_process(res, mem);
+  if constexpr(!comp_grad)
+    return;
+
+  double const integral{res[0]};
   res += inner_problem.n_out();
 
   arma::mat outer_int(n_vars(), n_vars());
@@ -600,8 +634,12 @@ void rescale_shift_problem<comp_grad>::log_integrand_hess
 
 template<bool comp_grad>
 void rescale_shift_problem<comp_grad>::post_process
-  (double * __restrict__ res, double const integral)
-  const {
+  (double *res, simple_mem_stack<double> &mem) const {
+  inner_problem.post_process(res, mem);
+  if constexpr(!comp_grad)
+    return;
+
+  double const integral{res[0]};
   res += inner_problem.n_out();
 
   {

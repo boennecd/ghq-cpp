@@ -139,11 +139,8 @@ void expected_survival_term<comp_grad>::log_integrand_hess
         lp[i] += m[i + k * n_lps] * point[k];
   }
 
-  double out{};
-  for(size_t i = 0; i < n_lps; ++i){
-    lp[i] = -weights[i] * std::exp(lp[i]); // the derivative w.r.t. lp
-    out += lp[i];
-  }
+  for(size_t i = 0; i < n_lps; ++i)
+    lp[i] = -weights[i] * std::exp(lp[i]);
 
   // TODO: do this smarter
   arma::mat H(hess, n_vars(), n_vars(), false);

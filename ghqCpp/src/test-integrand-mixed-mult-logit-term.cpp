@@ -141,8 +141,6 @@ context("mixed_mult_logit_term works as expected") {
 
     auto res = ghq(dat, prob_adap, mem);
 
-    prob.post_process(res.data(), res[0]);
-
     size_t const n_grad = std::distance(std::begin(true_gr), std::end(true_gr));
     expect_true(res.size() == 1 + n_grad);
 
