@@ -143,7 +143,7 @@ void expected_survival_term<comp_grad>::log_integrand_hess
     lp[i] = -weights[i] * std::exp(lp[i]);
 
   // TODO: do this smarter
-  arma::mat H(hess, n_vars(), n_vars(), false);
+  arma::mat H(hess, n_vars(), n_vars(), false, true);
   arma::mat dum(n_lps, n_lps, arma::fill::zeros);
   for(arma::uword i = 0; i < n_lps; ++i)
     dum(i, i) = lp[i];

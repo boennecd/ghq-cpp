@@ -495,8 +495,7 @@ void rescale_problem<comp_grad>::post_process
     }
   }
 
-  arma::mat lhs(res, n_vars(), n_vars(), false);
-
+  arma::mat lhs(res, n_vars(), n_vars(), false, true);
   lhs = arma::solve
     (arma::trimatu(Sigma_chol),
      arma::solve(arma::trimatu(Sigma_chol), outer_int).t());
@@ -660,7 +659,7 @@ void rescale_shift_problem<comp_grad>::post_process
       outer_int(j, j) = (*res_ij - integral) / 2;
     }
   }
-  arma::mat lhs(res, n_vars(), n_vars(), false);
+  arma::mat lhs(res, n_vars(), n_vars(), false, true);
 
   lhs = arma::solve
     (arma::trimatu(Sigma_chol),

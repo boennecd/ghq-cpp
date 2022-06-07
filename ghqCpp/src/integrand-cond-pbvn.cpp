@@ -111,8 +111,8 @@ void cond_pbvn<comp_grad>::log_integrand_hess
       hess_inter[i + j * 2] -= gr_inter[i] * gr_inter[j];
 
   // TODO: do this in a smarter way
-  arma::mat hess_inter_mat(hess_inter, 2, 2, false);
-  arma::mat res(hess, n_vars(), n_vars(), false);
+  arma::mat hess_inter_mat(hess_inter, 2, 2, false, true);
+  arma::mat res(hess, n_vars(), n_vars(), false, true);
   res = V.t() * hess_inter_mat * V;
 }
 

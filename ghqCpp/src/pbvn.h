@@ -375,7 +375,7 @@ void pbvn_hess(double const *mu, double const *Sigma, double *hess){
   double gr[6];
   pbvn_grad<method, true>(mu, Sigma, gr);
 
-  arma::mat Sig(const_cast<double *>(Sigma), 2, 2, false);
+  arma::mat Sig(const_cast<double *>(Sigma), 2, 2, false, true);
   for(unsigned j = 0; j < 2; ++j)
     for(unsigned i = 0; i < 2; ++i)
       hess[i + j * 2] = 2 * gr[i + j * 2 + 2];
