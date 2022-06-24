@@ -1,0 +1,56 @@
+
+R version 4.2.0 (2022-04-22) -- "Vigorous Calisthenics"
+Copyright (C) 2022 The R Foundation for Statistical Computing
+Platform: x86_64-pc-linux-gnu (64-bit)
+
+R is free software and comes with ABSOLUTELY NO WARRANTY.
+You are welcome to redistribute it under certain conditions.
+Type 'license()' or 'licence()' for distribution details.
+
+  Natural language support but running in an English locale
+
+R is a collaborative project with many contributors.
+Type 'contributors()' for more information and
+'citation()' on how to cite R or R packages in publications.
+
+Type 'demo()' for some demos, 'help()' for on-line help, or
+'help.start()' for an HTML browser interface to help.
+Type 'q()' to quit R.
+
+> eta <- matrix(c(-0.231792563572526, 0.539682839997113, -0.00460151582956314, 0.435237016528845, 0.983812189660966, -0.239929641131312, 0.554890442639589, 0.869410462211818, -0.575714957434684, 0.303347532171756, -0.748889808077365, -0.465558662544936), 3)
+> Sigma <- matrix(c(1.07173376588632, 0.760530258851724, -0.920427236518008, 0.760530258851724, 3.4214999078618, -1.56325086522103, -0.920427236518008, -1.56325086522103, 2.44510218991128), 3)
+> which_cat <- 1:4 - 1L
+> n <- NCOL(Sigma)
+> 
+> library(ghqCpp)
+> 
+> dat <- fastGHQuad::gaussHermiteData(10)
+> 
+> microbenchmark::microbenchmark(
++   integral =
++     mixed_mult_logit_term(
++       eta, Sigma, which_cat, nodes = dat$x, weights = dat$w,
++       use_adaptive = FALSE),
++   `integral adaptive` =
++     mixed_mult_logit_term(
++       eta, Sigma, which_cat, nodes = dat$x, weights = dat$w,
++       use_adaptive = TRUE),
++   grad =
++     mixed_mult_logit_term_grad(
++       eta, Sigma, which_cat, nodes = dat$x, weights = dat$w,
++       use_adaptive = FALSE),
++   `grad adaptive` =
++     mixed_mult_logit_term_grad(
++       eta, Sigma, which_cat, nodes = dat$x, weights = dat$w,
++       use_adaptive = TRUE),
++   times = 10000)
+Unit: microseconds
+              expr     min       lq     mean  median       uq      max neval
+          integral  80.050  84.2775  86.6397  86.198  86.8485 1164.872 10000
+ integral adaptive  98.866 101.9820 104.1125 102.534 104.2630 1086.145 10000
+              grad 114.999 115.5480 117.7576 115.827 118.3210  283.936 10000
+     grad adaptive 134.050 134.7530 137.6428 135.171 137.9685 1097.890 10000
+> 
+> proc.time()
+   user  system elapsed 
+  4.697   0.017   4.708 
