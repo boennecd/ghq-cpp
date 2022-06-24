@@ -39,10 +39,9 @@ void mixed_probit_term<comp_grad>::eval
     outs += 2 * n_points;
 
     // the derivatives w.r.t. z
-    double const * point_ij{points};
     for(size_t j = 0; j < n_vars(); ++j)
-      for(size_t i = 0; i < n_points; ++i, ++outs, ++point_ij)
-        *outs = d_etas[i] * *point_ij;
+      for(size_t i = 0; i < n_points; ++i)
+        outs[i + j * n_points] = d_etas[i] * points[i + j * n_points];
   }
 }
 

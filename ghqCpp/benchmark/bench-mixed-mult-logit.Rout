@@ -45,12 +45,12 @@ Type 'q()' to quit R.
 +       use_adaptive = TRUE),
 +   times = 10000)
 Unit: microseconds
-              expr     min       lq     mean  median       uq      max neval
-          integral  80.050  84.2775  86.6397  86.198  86.8485 1164.872 10000
- integral adaptive  98.866 101.9820 104.1125 102.534 104.2630 1086.145 10000
-              grad 114.999 115.5480 117.7576 115.827 118.3210  283.936 10000
-     grad adaptive 134.050 134.7530 137.6428 135.171 137.9685 1097.890 10000
+              expr     min       lq      mean  median       uq      max neval
+          integral  80.335  82.6830  84.11482  82.901  83.2985  240.197 10000
+ integral adaptive  97.264  98.6085 100.50037  98.856  99.3590 1072.291 10000
+              grad 112.041 113.5420 115.52673 113.723 114.1955  253.545 10000
+     grad adaptive 129.385 130.2330 132.72988 130.459 131.1870 1202.793 10000
 > 
 > proc.time()
    user  system elapsed 
-  4.697   0.017   4.708 
+  4.574   0.017   4.585 
