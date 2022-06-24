@@ -1,0 +1,57 @@
+
+R version 4.2.0 (2022-04-22) -- "Vigorous Calisthenics"
+Copyright (C) 2022 The R Foundation for Statistical Computing
+Platform: x86_64-pc-linux-gnu (64-bit)
+
+R is free software and comes with ABSOLUTELY NO WARRANTY.
+You are welcome to redistribute it under certain conditions.
+Type 'license()' or 'licence()' for distribution details.
+
+  Natural language support but running in an English locale
+
+R is a collaborative project with many contributors.
+Type 'contributors()' for more information and
+'citation()' on how to cite R or R packages in publications.
+
+Type 'demo()' for some demos, 'help()' for on-line help, or
+'help.start()' for an HTML browser interface to help.
+Type 'q()' to quit R.
+
+> etas <- c(-0.6381, -0.6343, -0.6285, -0.6227, -0.6193, -0.6212, -0.6313, -0.6515, -0.6827, -0.724, -0.7723, -0.8229, -0.8699, -0.9073, -0.93)
+> ws <- c(0.0473878636519986, 0.10842748431263, 0.165122315533235, 0.215065333801771, 0.256205263034596, 0.286856653590245, 0.305764321437458, 0.312154084712178, 0.305764321437458, 0.286856653590245, 0.256205263034596, 0.215065333801771, 0.165122315533235, 0.10842748431263, 0.0473878636519986)
+> M <- structure(c(0.3115, 0.312, 0.3128, 0.3141, 0.3156, 0.3173, 0.3192, 0.3212, 0.3232, 0.3251, 0.3269, 0.3284, 0.3296, 0.3305, 0.331, -0.1315, -0.1378, -0.1488, -0.1641, -0.1831, -0.205, -0.2288, -0.2537, -0.2786, -0.3024, -0.3243, -0.3433, -0.3586, -0.3696, -0.3758, -0.4, -0.4, -0.4, -0.4, -0.4, -0.4, -0.4, -0.4, -0.4, -0.4, -0.4, -0.4, -0.4, -0.4, -0.4, -1.2253, -1.1941, -1.1392, -1.0629, -0.9683, -0.8593, -0.7404, -0.6164, -0.4924, -0.3734, -0.2644, -0.1699, -0.0936, -0.0387, -0.0074, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1), .Dim = c(15L, 5L))
+> V <- structure(c(0.35, 0.08, -0.05, 0.01, 0, 0.08, 1.92, -0.24, -0.04, 0, -0.05, -0.24, 0.32, 0.09, 0, 0.01, -0.04, 0.09, 0.12, 0, 0, 0, 0, 0, 0.04), .Dim = c(5L, 5L))
+> n <- NCOL(V)
+> 
+> library(ghqCpp)
+> 
+> dat <- fastGHQuad::gaussHermiteData(10)
+> 
+> microbenchmark::microbenchmark(
++   integral =
++     expected_survival_term(
++       etas, ws, M, V, nodes = dat$x, weights = dat$w,
++       use_adaptive = FALSE),
++   `integral adaptive` =
++     expected_survival_term(
++       etas, ws, M, V, nodes = dat$x, weights = dat$w,
++       use_adaptive = TRUE),
++   grad =
++     expected_survival_term(
++       etas, ws, M, V, nodes = dat$x, weights = dat$w,
++       use_adaptive = FALSE),
++   `grad adaptive` =
++     expected_survival_term(
++       etas, ws, M, V, nodes = dat$x, weights = dat$w,
++       use_adaptive = TRUE),
++   times = 100)
+Unit: milliseconds
+              expr      min       lq     mean   median       uq      max neval
+          integral 12.76094 12.78405 12.86975 12.82947 12.89994 14.49110   100
+ integral adaptive 14.50870 14.53097 14.61167 14.57729 14.63501 15.45259   100
+              grad 12.76635 12.79362 12.89539 12.83776 12.92591 13.55153   100
+     grad adaptive 14.50839 14.54978 14.64837 14.59591 14.67114 15.80163   100
+> 
+> proc.time()
+   user  system elapsed 
+  5.709   0.019   5.723 
